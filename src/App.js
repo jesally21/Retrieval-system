@@ -18,13 +18,19 @@ const statuses = ['Draft', 'Pending Approval', 'Needs Clarification', 'Rejected'
 
 export function getAvatarUrl(name, gender) {
   const normalizedName = (name || 'BMPC User').trim();
-  if (gender === 'female') {
-    return 'https://upload.wikimedia.org/wikipedia/commons/4/46/Zhao_Lusi_in_2023_%281%29.jpg';
-  }
-  if (gender === 'male') {
-    return 'https://upload.wikimedia.org/wikipedia/commons/9/91/Chen_Zheyuan_on_the_set_of_The_White_Olive_Tree-cropped.png';
-  }
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(normalizedName)}&background=0f766e&color=fff&size=128`;
+  const initials = normalizedName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'BU';
+  const palette = gender === 'female'
+    ? ['#7c3aed', '#ec4899']
+    : gender === 'male'
+      ? ['#1757a7', '#0f766e']
+      : ['#0f766e', '#1757a7'];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="${palette[0]}"/><stop offset="1" stop-color="${palette[1]}"/></linearGradient></defs><rect width="128" height="128" rx="64" fill="url(#g)"/><text x="64" y="75" text-anchor="middle" font-family="Arial, sans-serif" font-size="42" font-weight="700" fill="#ffffff">${initials}</text></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
 const initialUsers = [

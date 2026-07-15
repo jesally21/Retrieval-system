@@ -588,6 +588,7 @@ button.danger {
 
 .workspace {
   min-width: 0;
+  overflow-x: hidden;
 }
 
 .topbar {
@@ -1384,6 +1385,46 @@ textarea {
   color: var(--blue-900);
 }
 
+@media (max-width: 1180px) {
+  .app-shell {
+    grid-template-columns: 238px 1fr;
+  }
+
+  .sidebar {
+    padding: 16px 12px;
+  }
+
+  .brand {
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .brand img {
+    width: 50px;
+    height: 50px;
+  }
+
+  .brand span {
+    font-size: 18px;
+  }
+
+  .sidebar button {
+    padding-inline: 10px;
+  }
+
+  .page {
+    padding: 24px;
+  }
+
+  .dashboard-content-layout {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+
+  .filters {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 960px) {
   .login-page {
     grid-template-columns: 1fr;
@@ -1405,17 +1446,73 @@ textarea {
   }
 
   .sidebar {
-    position: static;
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    height: auto;
+    max-height: none;
+    padding: 12px;
+    box-shadow: 0 12px 28px rgba(8, 29, 79, .16);
+  }
+
+  .brand {
+    margin-bottom: 12px;
+  }
+
+  .brand small {
+    display: none;
   }
 
   .sidebar nav {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+  }
+
+  .sidebar nav button {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 138px;
+    white-space: nowrap;
+  }
+
+  .sidebar button.active {
+    padding-left: 14px;
+  }
+
+  .sidebar button.active::before {
+    display: none;
   }
 
   .topbar,
   .profile-tools {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .topbar {
+    position: static;
+    gap: 12px;
+    padding: 16px 18px;
+  }
+
+  .topbar h1,
+  .page-title h2 {
+    font-size: 18px;
+  }
+
+  .profile-tools,
+  .user-chip,
+  .theme-toggle,
+  .topbar .ghost {
+    width: 100%;
+  }
+
+  .theme-toggle,
+  .topbar .ghost {
+    justify-content: center;
   }
 
   .metric-grid,
@@ -1436,6 +1533,19 @@ textarea {
 
   .table-card {
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table-card table {
+    min-width: 720px;
+  }
+
+  .table-card h3 {
+    position: sticky;
+    left: 0;
+    width: max-content;
+    min-width: 100%;
+    background: var(--surface);
   }
 
   .dashboard-reference {
@@ -1449,4 +1559,235 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .toolbar-row,
+  .card-header,
+  .queue-card,
+  .list-item,
+  .info-card p,
+  .route-list p {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .toolbar-row,
+  .card-header,
+  .queue-card,
+  .list-item {
+    flex-direction: column;
+  }
+
+  .toolbar-row button,
+  .queue-card button,
+  .actions button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    font-size: 13px;
+  }
+
+  body {
+    background: var(--background);
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font-size: 14px;
+  }
+
+  button {
+    min-height: 44px;
+  }
+
+  .login-page {
+    min-height: 100svh;
+    padding: 12px;
+    background: var(--background);
+  }
+
+  .login-visual {
+    min-height: 180px;
+    height: 26vh;
+    border-radius: 10px;
+  }
+
+  .login-panel {
+    padding: 20px;
+  }
+
+  .login-panel img {
+    width: 84px;
+    height: 84px;
+  }
+
+  .sidebar {
+    padding: 10px;
+  }
+
+  .brand {
+    border-radius: 9px;
+    margin-bottom: 10px;
+  }
+
+  .brand img {
+    width: 42px;
+    height: 42px;
+  }
+
+  .brand span {
+    font-size: 16px;
+  }
+
+  .sidebar nav button {
+    min-width: 118px;
+    min-height: 38px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .nav-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .topbar {
+    padding: 14px;
+  }
+
+  .user-chip {
+    min-width: 0;
+  }
+
+  .page {
+    padding: 14px;
+  }
+
+  .page-title {
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 16px;
+    padding-left: 10px;
+  }
+
+  .back-btn {
+    flex: 0 0 auto;
+    width: 34px;
+    height: 34px;
+  }
+
+  .dashboard-reference,
+  .dashboard-total-card,
+  .dashboard-trend-card,
+  .info-card,
+  .table-card,
+  .queue-card,
+  .theme-card,
+  .policy-section {
+    border-radius: 8px;
+  }
+
+  .dashboard-main-metrics .metric-grid,
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .metric {
+    min-height: 76px;
+  }
+
+  .metric span {
+    font-size: 11px;
+  }
+
+  .metric strong {
+    font-size: 22px;
+  }
+
+  .dashboard-trend-card svg {
+    min-width: 420px;
+  }
+
+  .dashboard-trend-card {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .report-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .report-tabs button {
+    flex: 0 0 auto;
+  }
+
+  .info-card {
+    padding: 14px;
+  }
+
+  .info-card p {
+    gap: 4px;
+  }
+
+  .info-card p strong,
+  .info-card p span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .actions,
+  .action-group {
+    width: 100%;
+  }
+
+  .actions button,
+  .action-group button,
+  .add-inline-form button {
+    flex: 1 1 100%;
+  }
+
+  .table-card table {
+    min-width: 680px;
+  }
+
+  th,
+  td {
+    padding: 11px 12px;
+  }
+}
+
+@media (max-width: 420px) {
+  .dashboard-main-metrics .metric-grid,
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-controls select,
+  .dashboard-controls button,
+  .dashboard-search {
+    min-height: 42px;
+  }
+
+  .brand {
+    align-items: flex-start;
+  }
+
+  .sidebar nav button {
+    min-width: 108px;
+  }
+
+  .badge {
+    white-space: normal;
+    border-radius: 8px;
+  }
+
+  .table-card table {
+    min-width: 620px;
+  }
 }
