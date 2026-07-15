@@ -1,70 +1,49 @@
-# Getting Started with Create React App
+# BMPC Document Retrieval Request System
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Working React MVP for Barbaza Multi-Purpose Cooperative document retrieval requests.
 
-## Available Scripts
+## What Is Included
 
-In the project directory, you can run:
+- Role-aware dashboard for requestors, approvers, archivists, executives, and admin users.
+- Request submission with agreement confirmation and approval routing.
+- Approval queue with approve, reject, and clarification actions.
+- Archivist processing for physical and electronic documents.
+- Return, access revocation, deletion confirmation, closure, and incident handling.
+- Request details with processing, closure, incident, and audit trail sections.
+- Reports with export-ready filtered tables.
+- Admin user and settings views.
+- Supabase SQL schema with tables, seed reference data, helper functions, triggers, indexes, and RLS policies.
 
-### `npm start`
+## Run Locally
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+```bash
+npm start
+```
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+Open http://localhost:3000.
 
-### `npm test`
+If PowerShell blocks `npm`, use:
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+```bash
+npm.cmd start
+```
 
-### `npm run build`
+## Build
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+```bash
+npm.cmd run build
+```
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+## Supabase
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+Copy `.env.example` to your local environment file and set the Supabase URL and anon key.
 
-### `npm run eject`
+Apply the full database schema in the Supabase SQL Editor:
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+```txt
+supabase/schema.sql
+```
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+The schema creates the document retrieval tables, reference data, request routing tables, processing/closure/incident/audit tables, helper functions, triggers, indexes, and RLS policies.
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+The current UI uses in-memory demo data so the full workflow can be reviewed immediately. The Supabase schema and client config are ready for wiring persistent CRUD/auth calls into the existing screens.
