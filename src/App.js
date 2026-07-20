@@ -518,7 +518,12 @@ function App() {
     if (!email) return ['Email is required.'];
     if (patch.password && patch.password.length < 6) return ['Password must be at least 6 characters.'];
     if (users.some((user) => user.id !== currentUser.id && user.email.toLowerCase() === email)) return ['Email is already used by another account.'];
-    setUsers((items) => items.map((user) => (user.id === currentUser.id ? { ...user, ...patch, email, avatar: getAvatarUrl(patch.name || user.name, patch.gender || user.gender) } : user)));
+    setUsers((items) => items.map((user) => {
+      if (user.id !== currentUser.id) return user;
+      const generatedAvatar = getAvatarUrl(patch.name || user.name, patch.gender || user.gender);
+      const avatar = patch.avatarCustom ? patch.avatar : generatedAvatar;
+      return { ...user, ...patch, email, avatar, avatarCustom: Boolean(patch.avatarCustom) };
+    }));
     return [];
   };
 
@@ -625,13 +630,30 @@ function Sidebar({ user, path, setPath, isOpen, onClose }) {
 
 function Header({ user, users, setCurrentUserId, onLogout, onUpdateProfile, theme, setTheme, isMobileMenuOpen, onMenuToggle }) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [profileDraft, setProfileDraft] = useState({ name: user.name, email: user.email, password: user.password || '', gender: user.gender });
+  const [profileDraft, setProfileDraft] = useState({ name: user.name, email: user.email, password: user.password || '', gender: user.gender, avatar: user.avatarCustom ? user.avatar : '', avatarCustom: Boolean(user.avatarCustom) });
   const [profileErrors, setProfileErrors] = useState([]);
 
   useEffect(() => {
-    setProfileDraft({ name: user.name, email: user.email, password: user.password || '', gender: user.gender });
+    setProfileDraft({ name: user.name, email: user.email, password: user.password || '', gender: user.gender, avatar: user.avatarCustom ? user.avatar : '', avatarCustom: Boolean(user.avatarCustom) });
     setProfileErrors([]);
   }, [user]);
+
+  const currentAvatar = profileDraft.avatar || getAvatarUrl(profileDraft.name, profileDraft.gender);
+
+  const uploadProfileImage = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setProfileErrors(['Please choose an image file for the profile picture.']);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setProfileDraft((draft) => ({ ...draft, avatar: reader.result, avatarCustom: true }));
+      setProfileErrors([]);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const saveProfile = () => {
     const errors = onUpdateProfile(profileDraft);
@@ -650,15 +672,14 @@ function Header({ user, users, setCurrentUserId, onLogout, onUpdateProfile, them
         <div><h1>Document Retrieval Request System</h1><p>Secure request, approval, release, return, and audit monitoring.</p></div>
       </div>
       <div className="profile-tools">
-        <div className="user-chip">
-          <img className="avatar-image compact" src={getAvatarUrl(user.name, user.gender)} alt={user.name} />
+        <button className="user-chip" type="button" onClick={() => setIsProfileOpen(true)} aria-label="Edit profile">
+          <img className="avatar-image compact" src={user.avatar || getAvatarUrl(user.name, user.gender)} alt={user.name} />
           <div>
             <strong>{user.name}</strong>
             <span>{roles[user.role]}</span>
           </div>
-        </div>
+        </button>
         <select value={user.id} onChange={(event) => setCurrentUserId(event.target.value)}>{users.map((item) => <option value={item.id} key={item.id}>{item.name} - {roles[item.role]}</option>)}</select>
-        <button className="secondary" type="button" onClick={() => setIsProfileOpen(true)}>Edit Profile</button>
         <button type="button" className="theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
           <span className="theme-toggle-dot"><ThemeIcon theme={theme} /></span>
           <span>{theme === 'dark' ? 'Dark' : 'Light'}</span>
@@ -671,13 +692,16 @@ function Header({ user, users, setCurrentUserId, onLogout, onUpdateProfile, them
             <h2>Edit Profile</h2>
             {profileErrors.length > 0 && <AlertList items={profileErrors} />}
             <div className="profile-avatar-preview">
-              <img className="avatar-image" src={getAvatarUrl(profileDraft.name, profileDraft.gender)} alt={profileDraft.name || user.name} />
-              <span>{profileDraft.gender === 'female' ? 'Girl avatar' : 'Boy avatar'}</span>
+              <img className="avatar-image" src={currentAvatar} alt={profileDraft.name || user.name} />
+              <div>
+                <span>Profile picture</span>
+                <label className="upload-avatar-button">
+                  Choose Image
+                  <input type="file" accept="image/*" onChange={uploadProfileImage} />
+                </label>
+              </div>
             </div>
             <Field label="Name" value={profileDraft.name} onChange={(value) => setProfileDraft((draft) => ({ ...draft, name: value }))} />
-            <Field label="Email" type="email" value={profileDraft.email} onChange={(value) => setProfileDraft((draft) => ({ ...draft, email: value }))} />
-            <Field label="Password" type="password" value={profileDraft.password} onChange={(value) => setProfileDraft((draft) => ({ ...draft, password: value }))} />
-            <Field label="Gender" type="select" value={profileDraft.gender} options={['male', 'female']} onChange={(value) => setProfileDraft((draft) => ({ ...draft, gender: value }))} />
             <div className="actions">
               <button type="button" onClick={saveProfile}>Save Profile</button>
               <button className="ghost" type="button" onClick={() => setIsProfileOpen(false)}>Cancel</button>
@@ -694,10 +718,28 @@ function Login({ users, currentUserId, onLogin, onCreateAccount, onResetPassword
   const [mode, setMode] = useState('login');
   const [errors, setErrors] = useState([]);
   const [notice, setNotice] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const selectedUser = users.find((user) => user.id === selected) || users[0];
+  const [loginForm, setLoginForm] = useState({ email: selectedUser?.email || '', password: selectedUser?.password || '' });
   const [accountForm, setAccountForm] = useState({ name: '', email: '', password: '', gender: 'male', branch: 'Head Office', department: 'Savings', position: 'Requestor' });
   const [resetForm, setResetForm] = useState({ email: '', password: '' });
+  useEffect(() => {
+    setLoginForm({ email: selectedUser?.email || '', password: selectedUser?.password || '' });
+  }, [selectedUser]);
   const updateAccount = (key, value) => setAccountForm((draft) => ({ ...draft, [key]: value }));
   const updateReset = (key, value) => setResetForm((draft) => ({ ...draft, [key]: value }));
+  const updateLogin = (key, value) => setLoginForm((draft) => ({ ...draft, [key]: value }));
+  const submitLogin = () => {
+    const email = loginForm.email.trim().toLowerCase();
+    const matchedUser = users.find((user) => user.email.toLowerCase() === email && user.password === loginForm.password);
+    if (!matchedUser) {
+      setErrors(['Email or password is incorrect.']);
+      return;
+    }
+    setErrors([]);
+    onLogin(matchedUser.id);
+  };
   const submitAccount = () => {
     const nextErrors = onCreateAccount(accountForm);
     setErrors(nextErrors);
@@ -725,16 +767,16 @@ function Login({ users, currentUserId, onLogin, onCreateAccount, onResetPassword
         {mode === 'login' && (
           <>
             <label>Email</label>
-            <input value={users.find((user) => user.id === selected)?.email || ''} readOnly />
+            <input value={loginForm.email} onChange={(event) => updateLogin('email', event.target.value)} />
             <label>Password</label>
-            <input value={users.find((user) => user.id === selected)?.password || 'demo-password'} type="password" readOnly />
+            <PasswordInput value={loginForm.password} onChange={(value) => updateLogin('password', value)} isVisible={showLoginPassword} onToggle={() => setShowLoginPassword((isVisible) => !isVisible)} />
             <div className="login-actions-row">
               <button className="text-button" type="button" onClick={() => { setMode('forgot'); setErrors([]); setNotice(''); }}>Forgot Password?</button>
               <button className="text-button" type="button" onClick={() => { setMode('create'); setErrors([]); setNotice(''); }}>Create an Account</button>
             </div>
             <label>Demo role</label>
             <select value={selected} onChange={(event) => setSelected(event.target.value)}>{users.map((user) => <option value={user.id} key={user.id}>{user.name} - {roles[user.role]}</option>)}</select>
-            <button onClick={() => onLogin(selected)}>Login</button>
+            <button onClick={submitLogin}>Login</button>
           </>
         )}
         {mode === 'create' && (
@@ -752,13 +794,29 @@ function Login({ users, currentUserId, onLogin, onCreateAccount, onResetPassword
         {mode === 'forgot' && (
           <>
             <Field label="Email" type="email" value={resetForm.email} onChange={(value) => updateReset('email', value)} />
-            <Field label="New Password" type="password" value={resetForm.password} onChange={(value) => updateReset('password', value)} />
+            <label>New Password</label>
+            <PasswordInput value={resetForm.password} onChange={(value) => updateReset('password', value)} isVisible={showResetPassword} onToggle={() => setShowResetPassword((isVisible) => !isVisible)} />
             <button type="button" onClick={submitReset}>Update Password</button>
             <button className="ghost" type="button" onClick={() => setMode('login')}>Back to Login</button>
           </>
         )}
       </section>
     </main>
+  );
+}
+
+function PasswordInput({ value, onChange, isVisible, onToggle }) {
+  return (
+    <div className="password-input-wrap">
+      <input value={value} type={isVisible ? 'text' : 'password'} onChange={(event) => onChange(event.target.value)} />
+      <button className="password-toggle" type="button" aria-label={isVisible ? 'Hide password' : 'Show password'} onClick={onToggle}>
+        {isVisible ? (
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18" /><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8" /><path d="M9.5 5.3A8.9 8.9 0 0 1 12 5c5 0 8.5 4.5 9.5 7a11.8 11.8 0 0 1-2.3 3.4" /><path d="M6.6 6.6A12.2 12.2 0 0 0 2.5 12c1 2.5 4.5 7 9.5 7a8.8 8.8 0 0 0 4.3-1.1" /></svg>
+        ) : (
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12c1-2.5 4.5-7 9.5-7s8.5 4.5 9.5 7c-1 2.5-4.5 7-9.5 7s-8.5-4.5-9.5-7Z" /><circle cx="12" cy="12" r="3" /></svg>
+        )}
+      </button>
+    </div>
   );
 }
 

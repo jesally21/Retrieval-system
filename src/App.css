@@ -717,11 +717,15 @@ body.dark .theme-toggle-dot {
   min-width: 190px;
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
   padding: 8px 10px;
+  color: var(--text);
+  box-shadow: none;
+  text-align: left;
 }
 
 /* Make the user profile chip and avatar use a soft light-purple accent in dark mode */
@@ -745,6 +749,12 @@ body.dark .user-chip .avatar-image {
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
+}
+
+.user-chip:hover,
+.user-chip:focus-visible {
+  border-color: var(--blue-700);
+  box-shadow: 0 10px 20px rgba(15, 118, 110, .12);
 }
 
 .avatar-image {
@@ -1518,6 +1528,49 @@ textarea {
   margin-top: -4px;
 }
 
+.password-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-wrap input {
+  padding-right: 48px;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 6px;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+  padding: 0;
+}
+
+.password-toggle:hover,
+.password-toggle:focus-visible {
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.password-toggle svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .text-button {
   min-height: auto;
   border: 0;
@@ -1572,8 +1625,30 @@ textarea {
 }
 
 .profile-avatar-preview span {
+  display: block;
+  margin-bottom: 8px;
   color: var(--muted);
   font-weight: 800;
+}
+
+.upload-avatar-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  border-radius: 7px;
+  background: var(--teal-soft);
+  color: var(--teal);
+  cursor: pointer;
+  font-weight: 800;
+  padding: 0 12px;
+}
+
+.upload-avatar-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
 }
 
 @media (max-width: 1180px) {
