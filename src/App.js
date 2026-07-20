@@ -17,31 +17,27 @@ const departments = ['ICT Department', 'HRAD', 'Accounting', 'Audit', 'SACD', 'L
 const statuses = ['Draft', 'Pending Approval', 'Needs Clarification', 'Rejected', 'Approved', 'Forwarded to Archivist', 'Processing', 'Released', 'Returned', 'Access Revoked', 'Deletion Confirmed', 'For Closure', 'Closed', 'Incident Reported', 'Overdue'];
 
 export function getAvatarUrl(name, gender) {
-  const normalizedName = (name || 'BMPC User').trim();
-  const initials = normalizedName
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('') || 'BU';
-  const palette = gender === 'female'
-    ? ['#7c3aed', '#ec4899']
-    : gender === 'male'
-      ? ['#1757a7', '#0f766e']
-      : ['#0f766e', '#1757a7'];
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="${palette[0]}"/><stop offset="1" stop-color="${palette[1]}"/></linearGradient></defs><rect width="128" height="128" rx="64" fill="url(#g)"/><text x="64" y="75" text-anchor="middle" font-family="Arial, sans-serif" font-size="42" font-weight="700" fill="#ffffff">${initials}</text></svg>`;
+  const isFemale = gender === 'female';
+  const palette = isFemale
+    ? { bg1: '#f7b7d8', bg2: '#8b5cf6', hair: '#3b1d52', shirt: '#be185d', accent: '#f9a8d4' }
+    : { bg1: '#8bd3ff', bg2: '#0f766e', hair: '#172554', shirt: '#1757a7', accent: '#93c5fd' };
+  const hair = isFemale
+    ? '<path d="M35 62c0-22 12-38 29-38s29 16 29 38v30H35V62z" fill="' + palette.hair + '"/><path d="M29 95c7-19 16-27 35-27s28 8 35 27v16H29V95z" fill="' + palette.hair + '" opacity=".92"/>'
+    : '<path d="M35 50c5-18 21-28 39-21 11 4 18 12 20 25-15-5-30-7-59-4z" fill="' + palette.hair + '"/>';
+  const face = '<circle cx="64" cy="61" r="26" fill="#ffd7ba"/><circle cx="54" cy="61" r="3" fill="#1f2937"/><circle cx="74" cy="61" r="3" fill="#1f2937"/><path d="M55 75c6 5 13 5 19 0" stroke="#9f1239" stroke-width="4" stroke-linecap="round" fill="none"/>';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><defs><linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="${palette.bg1}"/><stop offset="1" stop-color="${palette.bg2}"/></linearGradient></defs><rect width="128" height="128" rx="64" fill="url(#bg)"/><circle cx="98" cy="28" r="12" fill="${palette.accent}" opacity=".72"/>${hair}${face}<path d="M26 126c6-25 20-39 38-39s32 14 38 39H26z" fill="${palette.shirt}"/><path d="M53 90h22l-11 14-11-14z" fill="#fff" opacity=".88"/></svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
 const initialUsers = [
-  { id: 'u1', name: 'Mara Dela Cruz', email: 'mara@bmpc.local', role: 'requestor', branch: 'Barbaza', department: 'Savings', position: 'Member Services Associate', avatar: getAvatarUrl('Mara Dela Cruz', 'female') },
-  { id: 'u2', name: 'Ramon Salazar', email: 'ramon@bmpc.local', role: 'branch_head', branch: 'Barbaza', department: 'Branch Operations', position: 'Branch Head', avatar: getAvatarUrl('Ramon Salazar', 'male') },
-  { id: 'u3', name: 'Lina Reyes', email: 'lina@bmpc.local', role: 'sacd_head', branch: 'Head Office', department: 'SACD', position: 'SACD Head', avatar: getAvatarUrl('Lina Reyes', 'female') },
-  { id: 'u4', name: 'Ana Villanueva', email: 'ana@bmpc.local', role: 'department_head', branch: 'Head Office', department: 'ICT Department', position: 'Department Head', avatar: getAvatarUrl('Ana Villanueva', 'female') },
-  { id: 'u5', name: 'Joel Santos', email: 'joel@bmpc.local', role: 'dpo', branch: 'Head Office', department: 'Compliance', position: 'Data Privacy Officer', avatar: getAvatarUrl('Joel Santos', 'male') },
-  { id: 'u6', name: 'Leonil M. Alabado', email: 'leonil@bmpc.local', role: 'ceo', branch: 'Head Office', department: 'Executive', position: 'CEO', avatar: getAvatarUrl('Leonil M. Alabado', 'male') },
-  { id: 'u7', name: 'Nico Flores', email: 'nico@bmpc.local', role: 'archivist', branch: 'Head Office', department: 'Records / Archive', position: 'Archivist', avatar: getAvatarUrl('Nico Flores', 'male') },
-  { id: 'u8', name: 'Ivy Mendoza', email: 'ivy@bmpc.local', role: 'admin', branch: 'Head Office', department: 'ICT Department', position: 'System Admin', avatar: getAvatarUrl('Ivy Mendoza', 'female') },
+  { id: 'u1', name: 'Mara Dela Cruz', email: 'mara@bmpc.local', gender: 'female', role: 'requestor', branch: 'Barbaza', department: 'Savings', position: 'Member Services Associate', avatar: getAvatarUrl('Mara Dela Cruz', 'female') },
+  { id: 'u2', name: 'Ramon Salazar', email: 'ramon@bmpc.local', gender: 'male', role: 'branch_head', branch: 'Barbaza', department: 'Branch Operations', position: 'Branch Head', avatar: getAvatarUrl('Ramon Salazar', 'male') },
+  { id: 'u3', name: 'Lina Reyes', email: 'lina@bmpc.local', gender: 'female', role: 'sacd_head', branch: 'Head Office', department: 'SACD', position: 'SACD Head', avatar: getAvatarUrl('Lina Reyes', 'female') },
+  { id: 'u4', name: 'Ana Villanueva', email: 'ana@bmpc.local', gender: 'female', role: 'department_head', branch: 'Head Office', department: 'ICT Department', position: 'Department Head', avatar: getAvatarUrl('Ana Villanueva', 'female') },
+  { id: 'u5', name: 'Joel Santos', email: 'joel@bmpc.local', gender: 'male', role: 'dpo', branch: 'Head Office', department: 'Compliance', position: 'Data Privacy Officer', avatar: getAvatarUrl('Joel Santos', 'male') },
+  { id: 'u6', name: 'Leonil M. Alabado', email: 'leonil@bmpc.local', gender: 'male', role: 'ceo', branch: 'Head Office', department: 'Executive', position: 'CEO', avatar: getAvatarUrl('Leonil M. Alabado', 'male') },
+  { id: 'u7', name: 'Nico Flores', email: 'nico@bmpc.local', gender: 'male', role: 'archivist', branch: 'Head Office', department: 'Records / Archive', position: 'Archivist', avatar: getAvatarUrl('Nico Flores', 'male') },
+  { id: 'u8', name: 'Ivy Mendoza', email: 'ivy@bmpc.local', gender: 'female', role: 'admin', branch: 'Head Office', department: 'ICT Department', position: 'System Admin', avatar: getAvatarUrl('Ivy Mendoza', 'female') },
 ];
 
 const seedRequests = [
@@ -304,10 +300,12 @@ function buildRequestTrend(requests, dayCount = 30) {
 }
 
 function App() {
+  const [users, setUsers] = useState(() => initialUsers.map((user) => ({ ...user, password: 'demo-password' })));
   const [currentUserId, setCurrentUserId] = useState('u8');
   const [path, setPathState] = useState('/dashboard');
   const [theme, setTheme] = useState('dark');
   const [editingRequestId, setEditingRequestId] = useState(null);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const pathHistoryRef = useRef([]);
   const [requests, setRequests] = useState(seedRequests);
   const [processing, setProcessing] = useState({
@@ -373,7 +371,7 @@ function App() {
     { id: 'a3', requestId: 'r4', userId: 'u7', action: 'Released electronic access', oldStatus: 'Forwarded to Archivist', newStatus: 'Released', remarks: 'Read-only encrypted link issued.', createdAt: '2026-07-10 11:05' },
     { id: 'a4', requestId: 'r6', userId: 'u7', action: 'Closure evaluated', oldStatus: 'Returned', newStatus: 'Closed', remarks: 'Folder complete and refiled.', createdAt: '2026-07-10 16:45' },
   ]);
-  const currentUser = initialUsers.find((user) => user.id === currentUserId);
+  const currentUser = users.find((user) => user.id === currentUserId) || users[0];
   const setPath = useCallback((nextPath, options = {}) => {
     setPathState((currentPath) => {
       const resolvedPath = typeof nextPath === 'function' ? nextPath(currentPath) : nextPath;
@@ -398,6 +396,10 @@ function App() {
       return previousPath || '/dashboard';
     });
   }, []);
+
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [path]);
 
   useEffect(() => {
     document.body.classList.toggle('dark', theme === 'dark');
@@ -437,7 +439,7 @@ function App() {
       return [];
     }
 
-    const approver = determineApprover(currentUser, form, initialUsers);
+    const approver = determineApprover(currentUser, form, users);
     const next = {
       ...form,
       id: crypto.randomUUID(),
@@ -466,6 +468,60 @@ function App() {
     setPath('/requests/my');
   };
 
+  const deleteOwnRequest = (requestId) => {
+    const target = requests.find((item) => item.id === requestId);
+    if (!target || target.requestorId !== currentUser.id) return;
+    setRequests((items) => items.filter((item) => item.id !== requestId));
+    setProcessing((records) => Object.fromEntries(Object.entries(records).filter(([id]) => id !== requestId)));
+    setClosures((records) => Object.fromEntries(Object.entries(records).filter(([id]) => id !== requestId)));
+    setIncidents((items) => items.filter((item) => item.requestId !== requestId));
+    setAuditLogs((logs) => [{ id: crypto.randomUUID(), requestId, userId: currentUser.id, action: 'Deleted own request', oldStatus: target.status, newStatus: 'Deleted', remarks: target.documentTitle, createdAt: new Date().toLocaleString() }, ...logs.filter((log) => log.requestId !== requestId)]);
+    if (editingRequestId === requestId) setEditingRequestId(null);
+    setPath('/requests/my');
+  };
+
+  const createAccount = (form) => {
+    const email = form.email.trim().toLowerCase();
+    if (!form.name.trim()) return ['Full name is required.'];
+    if (!email) return ['Email is required.'];
+    if (users.some((user) => user.email.toLowerCase() === email)) return ['Email is already registered.'];
+    if (!form.password || form.password.length < 6) return ['Password must be at least 6 characters.'];
+    const nextUser = {
+      id: crypto.randomUUID(),
+      name: form.name.trim(),
+      email,
+      password: form.password,
+      gender: form.gender,
+      role: 'requestor',
+      branch: form.branch,
+      department: form.department,
+      position: form.position || 'Requestor',
+      avatar: getAvatarUrl(form.name.trim(), form.gender),
+    };
+    setUsers((items) => [...items, nextUser]);
+    setCurrentUserId(nextUser.id);
+    setPath('/dashboard', { replace: true });
+    return [];
+  };
+
+  const resetPassword = (email, password) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) return ['Email is required.'];
+    if (!password || password.length < 6) return ['New password must be at least 6 characters.'];
+    if (!users.some((user) => user.email.toLowerCase() === normalizedEmail)) return ['No account found for that email.'];
+    setUsers((items) => items.map((user) => (user.email.toLowerCase() === normalizedEmail ? { ...user, password } : user)));
+    return [];
+  };
+
+  const updateCurrentUserProfile = (patch) => {
+    const email = patch.email.trim().toLowerCase();
+    if (!email) return ['Email is required.'];
+    if (patch.password && patch.password.length < 6) return ['Password must be at least 6 characters.'];
+    if (users.some((user) => user.id !== currentUser.id && user.email.toLowerCase() === email)) return ['Email is already used by another account.'];
+    setUsers((items) => items.map((user) => (user.id === currentUser.id ? { ...user, ...patch, email, avatar: getAvatarUrl(patch.name || user.name, patch.gender || user.gender) } : user)));
+    return [];
+  };
+
   const visibleRequests = useMemo(() => requests.map((request) => {
     const record = processing[request.id];
     return isOverdue(request, record) ? { ...request, computedStatus: 'Overdue' } : request;
@@ -476,20 +532,20 @@ function App() {
   const allowedPath = isPathAllowed(path, currentUser.role);
 
   if (path === '/login') {
-    return <Login users={initialUsers} currentUserId={currentUserId} onLogin={(id) => { setCurrentUserId(id); setPath('/dashboard', { replace: true }); }} />;
+    return <Login users={users} currentUserId={currentUserId} onLogin={(id) => { setCurrentUserId(id); setPath('/dashboard', { replace: true }); }} onCreateAccount={createAccount} onResetPassword={resetPassword} />;
   }
 
-  const pageProps = { currentUser, users: initialUsers, requests: visibleRequests, rawRequests: requests, processing, closures, incidents, auditLogs, setPath, submitRequest, updateRequestStatus, addAuditLog, setProcessing, setClosures, setIncidents };
+  const pageProps = { currentUser, users, requests: visibleRequests, rawRequests: requests, processing, closures, incidents, auditLogs, setPath, submitRequest, updateRequestStatus, addAuditLog, setProcessing, setClosures, setIncidents };
 
   return (
-    <div className={`app-shell ${theme}`}>
-      <Sidebar user={currentUser} path={path} setPath={setPath} />
+    <div className={`app-shell ${theme} ${isMobileMenuOpen ? 'menu-open' : ''}`}>
+      <Sidebar user={currentUser} path={path} setPath={setPath} isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
       <main className="workspace">
-        <Header user={currentUser} users={initialUsers} setCurrentUserId={setCurrentUserId} onLogout={() => setPath('/login')} theme={theme} setTheme={setTheme} />
+        <Header user={currentUser} users={users} setCurrentUserId={setCurrentUserId} onLogout={() => setPath('/login')} onUpdateProfile={updateCurrentUserProfile} theme={theme} setTheme={setTheme} isMobileMenuOpen={isMobileMenuOpen} onMenuToggle={() => setIsMobileMenuOpen((isOpen) => !isOpen)} />
         {!allowedPath && <RoleDenied setPath={setPath} />}
         {allowedPath && path === '/dashboard' && <Dashboard {...pageProps} />}
         {allowedPath && path === '/requests/new' && <NewRequest {...pageProps} editingRequestId={editingRequestId} setEditingRequestId={setEditingRequestId} />}
-        {allowedPath && path === '/requests/my' && <RequestList title="My Requests" requests={visibleRequests.filter((request) => request.requestorId === currentUser.id)} setPath={setPath} currentUser={currentUser} allowManage={currentUser.role === 'requestor'} onEditRequest={(request) => { setEditingRequestId(request.id); setPath('/requests/new'); }} onWithdrawRequest={withdrawRequest} />}
+        {allowedPath && path === '/requests/my' && <RequestList title="My Requests" requests={visibleRequests.filter((request) => request.requestorId === currentUser.id)} setPath={setPath} currentUser={currentUser} allowManage={currentUser.role === 'requestor'} onEditRequest={(request) => { setEditingRequestId(request.id); setPath('/requests/new'); }} onWithdrawRequest={withdrawRequest} onDeleteRequest={deleteOwnRequest} />}
         {allowedPath && path === '/requests/all' && <RequestList title="All Requests" requests={visibleRequests} setPath={setPath} />}
         {allowedPath && route[0] === 'requests' && route[1] && route[2] !== 'closure' && <RequestDetails request={selectedRequest} {...pageProps} />}
         {allowedPath && route[0] === 'requests' && route[2] === 'closure' && <ClosurePage request={selectedRequest} {...pageProps} />}
@@ -499,9 +555,9 @@ function App() {
         {allowedPath && path === '/incidents' && <Incidents {...pageProps} />}
         {allowedPath && path === '/incidents/new' && <NewIncident {...pageProps} />}
         {allowedPath && path === '/reports' && <Reports {...pageProps} />}
-        {allowedPath && path === '/users' && <Users users={initialUsers} />}
+        {allowedPath && path === '/users' && <Users users={users} />}
         {allowedPath && path === '/settings' && <Settings theme={theme} setTheme={setTheme} />}
-        {allowedPath && path === '/audit-logs' && <AuditLogsPage logs={auditLogs} users={initialUsers} requests={requests} setPath={setPath} />}
+        {allowedPath && path === '/audit-logs' && <AuditLogsPage logs={auditLogs} users={users} requests={requests} setPath={setPath} />}
       </main>
     </div>
   );
@@ -539,7 +595,7 @@ function ThemeIcon({ theme }) {
   return <svg {...commonProps} aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>;
 }
 
-function Sidebar({ user, path, setPath }) {
+function Sidebar({ user, path, setPath, isOpen, onClose }) {
   const items = [
     ['Dashboard', '/dashboard', ['requestor', 'branch_head', 'sacd_head', 'department_head', 'dpo', 'ceo', 'archivist', 'admin'], 'dashboard'],
     ['New Request', '/requests/new', ['requestor', 'branch_head', 'department_head'], 'request'],
@@ -554,41 +610,107 @@ function Sidebar({ user, path, setPath }) {
     ['Audit Logs', '/audit-logs', ['admin'], 'audit'],
   ];
   return (
-    <aside className="sidebar">
+    <>
+      <button type="button" className={`mobile-menu-backdrop ${isOpen ? 'visible' : ''}`} aria-label="Close navigation menu" onClick={onClose} />
+      <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
       <div className="brand">
         <img src="/bmpc-logo.png" alt="Barbaza Multi-Purpose Cooperative logo" />
         <div><span>BMPC</span><small>Document Retrieval</small></div>
       </div>
-      <nav>{items.filter(([, , allowed]) => allowed.includes(user.role)).map(([label, href, , icon]) => <button className={path === href ? 'active' : ''} key={href} onClick={() => setPath(href)}><span className="nav-icon" aria-hidden="true"><SidebarIcon name={icon} /></span><span>{label}</span></button>)}</nav>
-    </aside>
+      <nav>{items.filter(([, , allowed]) => allowed.includes(user.role)).map(([label, href, , icon]) => <button className={path === href ? 'active' : ''} key={href} onClick={() => { setPath(href); onClose(); }}><span className="nav-icon" aria-hidden="true"><SidebarIcon name={icon} /></span><span>{label}</span></button>)}</nav>
+      </aside>
+    </>
   );
 }
 
-function Header({ user, users, setCurrentUserId, onLogout, theme, setTheme }) {
+function Header({ user, users, setCurrentUserId, onLogout, onUpdateProfile, theme, setTheme, isMobileMenuOpen, onMenuToggle }) {
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [profileDraft, setProfileDraft] = useState({ name: user.name, email: user.email, password: user.password || '', gender: user.gender });
+  const [profileErrors, setProfileErrors] = useState([]);
+
+  useEffect(() => {
+    setProfileDraft({ name: user.name, email: user.email, password: user.password || '', gender: user.gender });
+    setProfileErrors([]);
+  }, [user]);
+
+  const saveProfile = () => {
+    const errors = onUpdateProfile(profileDraft);
+    setProfileErrors(errors);
+    if (!errors.length) setIsProfileOpen(false);
+  };
+
   return (
     <header className="topbar">
-      <div><h1>Document Retrieval Request System</h1><p>Secure request, approval, release, return, and audit monitoring.</p></div>
+      <div className="topbar-title">
+        <button type="button" className={`hamburger-button ${isMobileMenuOpen ? 'active' : ''}`} aria-label={isMobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'} aria-expanded={isMobileMenuOpen} onClick={onMenuToggle}>
+          <span aria-hidden="true"></span>
+          <span aria-hidden="true"></span>
+          <span aria-hidden="true"></span>
+        </button>
+        <div><h1>Document Retrieval Request System</h1><p>Secure request, approval, release, return, and audit monitoring.</p></div>
+      </div>
       <div className="profile-tools">
         <div className="user-chip">
-          <img className="avatar-image compact" src={user.avatar || getAvatarUrl(user.name)} alt={user.name} />
+          <img className="avatar-image compact" src={getAvatarUrl(user.name, user.gender)} alt={user.name} />
           <div>
             <strong>{user.name}</strong>
             <span>{roles[user.role]}</span>
           </div>
         </div>
         <select value={user.id} onChange={(event) => setCurrentUserId(event.target.value)}>{users.map((item) => <option value={item.id} key={item.id}>{item.name} - {roles[item.role]}</option>)}</select>
+        <button className="secondary" type="button" onClick={() => setIsProfileOpen(true)}>Edit Profile</button>
         <button type="button" className="theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
           <span className="theme-toggle-dot"><ThemeIcon theme={theme} /></span>
           <span>{theme === 'dark' ? 'Dark' : 'Light'}</span>
         </button>
         <button className="ghost" onClick={onLogout}>Logout</button>
       </div>
+      {isProfileOpen && (
+        <div className="profile-editor" role="dialog" aria-modal="true" aria-label="Edit profile">
+          <div className="profile-editor-panel">
+            <h2>Edit Profile</h2>
+            {profileErrors.length > 0 && <AlertList items={profileErrors} />}
+            <div className="profile-avatar-preview">
+              <img className="avatar-image" src={getAvatarUrl(profileDraft.name, profileDraft.gender)} alt={profileDraft.name || user.name} />
+              <span>{profileDraft.gender === 'female' ? 'Girl avatar' : 'Boy avatar'}</span>
+            </div>
+            <Field label="Name" value={profileDraft.name} onChange={(value) => setProfileDraft((draft) => ({ ...draft, name: value }))} />
+            <Field label="Email" type="email" value={profileDraft.email} onChange={(value) => setProfileDraft((draft) => ({ ...draft, email: value }))} />
+            <Field label="Password" type="password" value={profileDraft.password} onChange={(value) => setProfileDraft((draft) => ({ ...draft, password: value }))} />
+            <Field label="Gender" type="select" value={profileDraft.gender} options={['male', 'female']} onChange={(value) => setProfileDraft((draft) => ({ ...draft, gender: value }))} />
+            <div className="actions">
+              <button type="button" onClick={saveProfile}>Save Profile</button>
+              <button className="ghost" type="button" onClick={() => setIsProfileOpen(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 }
 
-function Login({ users, currentUserId, onLogin }) {
+function Login({ users, currentUserId, onLogin, onCreateAccount, onResetPassword }) {
   const [selected, setSelected] = useState(currentUserId);
+  const [mode, setMode] = useState('login');
+  const [errors, setErrors] = useState([]);
+  const [notice, setNotice] = useState('');
+  const [accountForm, setAccountForm] = useState({ name: '', email: '', password: '', gender: 'male', branch: 'Head Office', department: 'Savings', position: 'Requestor' });
+  const [resetForm, setResetForm] = useState({ email: '', password: '' });
+  const updateAccount = (key, value) => setAccountForm((draft) => ({ ...draft, [key]: value }));
+  const updateReset = (key, value) => setResetForm((draft) => ({ ...draft, [key]: value }));
+  const submitAccount = () => {
+    const nextErrors = onCreateAccount(accountForm);
+    setErrors(nextErrors);
+  };
+  const submitReset = () => {
+    const nextErrors = onResetPassword(resetForm.email, resetForm.password);
+    setErrors(nextErrors);
+    if (!nextErrors.length) {
+      setNotice('Password updated. You can log in with the new password.');
+      setMode('login');
+    }
+  };
+
   return (
     <main className="login-page">
       <section className="login-visual" aria-label="Digital archive storage visual">
@@ -598,13 +720,43 @@ function Login({ users, currentUserId, onLogin }) {
         <img src="/bmpc-logo.png" alt="Barbaza Multi-Purpose Cooperative logo" />
         <h1>BMPC Document Retrieval</h1>
         <p>Controlled archive request, approval, release, return, and audit monitoring for Barbaza Multi-Purpose Cooperative.</p>
-        <label>Email</label>
-        <input value={users.find((user) => user.id === selected)?.email || ''} readOnly />
-        <label>Password</label>
-        <input value="demo-password" type="password" readOnly />
-        <label>Demo role</label>
-        <select value={selected} onChange={(event) => setSelected(event.target.value)}>{users.map((user) => <option value={user.id} key={user.id}>{user.name} - {roles[user.role]}</option>)}</select>
-        <button onClick={() => onLogin(selected)}>Login</button>
+        {errors.length > 0 && <AlertList items={errors} />}
+        {notice && <div className="alert">{notice}</div>}
+        {mode === 'login' && (
+          <>
+            <label>Email</label>
+            <input value={users.find((user) => user.id === selected)?.email || ''} readOnly />
+            <label>Password</label>
+            <input value={users.find((user) => user.id === selected)?.password || 'demo-password'} type="password" readOnly />
+            <div className="login-actions-row">
+              <button className="text-button" type="button" onClick={() => { setMode('forgot'); setErrors([]); setNotice(''); }}>Forgot Password?</button>
+              <button className="text-button" type="button" onClick={() => { setMode('create'); setErrors([]); setNotice(''); }}>Create an Account</button>
+            </div>
+            <label>Demo role</label>
+            <select value={selected} onChange={(event) => setSelected(event.target.value)}>{users.map((user) => <option value={user.id} key={user.id}>{user.name} - {roles[user.role]}</option>)}</select>
+            <button onClick={() => onLogin(selected)}>Login</button>
+          </>
+        )}
+        {mode === 'create' && (
+          <>
+            <Field label="Full Name" value={accountForm.name} onChange={(value) => updateAccount('name', value)} />
+            <Field label="Email" type="email" value={accountForm.email} onChange={(value) => updateAccount('email', value)} />
+            <Field label="Password" type="password" value={accountForm.password} onChange={(value) => updateAccount('password', value)} />
+            <Field label="Gender" type="select" value={accountForm.gender} options={['male', 'female']} onChange={(value) => updateAccount('gender', value)} />
+            <Field label="Branch" type="select" value={accountForm.branch} options={branches} onChange={(value) => updateAccount('branch', value)} />
+            <Field label="Department" type="select" value={accountForm.department} options={departments} onChange={(value) => updateAccount('department', value)} />
+            <button type="button" onClick={submitAccount}>Create Account</button>
+            <button className="ghost" type="button" onClick={() => setMode('login')}>Back to Login</button>
+          </>
+        )}
+        {mode === 'forgot' && (
+          <>
+            <Field label="Email" type="email" value={resetForm.email} onChange={(value) => updateReset('email', value)} />
+            <Field label="New Password" type="password" value={resetForm.password} onChange={(value) => updateReset('password', value)} />
+            <button type="button" onClick={submitReset}>Update Password</button>
+            <button className="ghost" type="button" onClick={() => setMode('login')}>Back to Login</button>
+          </>
+        )}
       </section>
     </main>
   );
@@ -828,12 +980,12 @@ function Field({ label, value, onChange, type = 'text', options = [], readOnly =
   return <label className={`field ${className}`}><span>{label}</span>{type === 'textarea' ? <textarea value={value} readOnly={readOnly} onChange={(e) => onChange?.(e.target.value)} /> : type === 'select' ? <select value={value} disabled={readOnly} onChange={(e) => onChange?.(e.target.value)}>{options.map((option) => <option key={option}>{option}</option>)}</select> : <input type={type} value={value} readOnly={readOnly} onChange={(e) => onChange?.(e.target.value)} />}</label>;
 }
 
-function RequestList({ title, requests, setPath, allowManage = false, onEditRequest, onWithdrawRequest }) {
-  return <section className="page"><PageTitle title={title} subtitle="Track request status, routing, processing, and closure." /><RequestTable requests={requests} setPath={setPath} showActions={allowManage} onEditRequest={onEditRequest} onWithdrawRequest={onWithdrawRequest} /></section>;
+function RequestList({ title, requests, setPath, allowManage = false, onEditRequest, onWithdrawRequest, onDeleteRequest }) {
+  return <section className="page"><PageTitle title={title} subtitle="Track request status, routing, processing, and closure." /><RequestTable requests={requests} setPath={setPath} showActions={allowManage} onEditRequest={onEditRequest} onWithdrawRequest={onWithdrawRequest} onDeleteRequest={onDeleteRequest} /></section>;
 }
 
-function RequestTable({ title, requests, setPath, showActions = false, onEditRequest, onWithdrawRequest }) {
-  return <div className="table-card">{title && <h3>{title}</h3>}<table><thead><tr><th>Request No.</th><th>Document</th><th>Type</th><th>Confidentiality</th><th>Status</th><th>Date Needed</th><th>Return Due Date</th>{showActions && <th>Actions</th>}</tr></thead><tbody>{requests.length ? requests.map((request) => <tr key={request.id} onClick={() => setPath?.(`/requests/${request.id}`)}><td>{request.requestNo}</td><td>{request.documentTitle}</td><td>{request.documentType}</td><td>{request.confidentialityLevel}</td><td><span data-variant={getStatusBadgeVariant(request.computedStatus || request.status)} className={statusClass(request.computedStatus || request.status)}>{request.computedStatus || request.status}</span></td><td>{request.dateNeeded}</td><td>{request.borrowReturnDueDate || '-'}</td>{showActions && <td className="actions-cell" onClick={(event) => event.stopPropagation()}><button className="secondary small" type="button" onClick={() => onEditRequest?.(request)}>Edit</button>{['Draft', 'Needs Clarification', 'Pending Approval'].includes(request.status) && <button className="ghost small" type="button" onClick={() => onWithdrawRequest?.(request.id)}>Return to Draft</button>}</td>}</tr>) : <tr><td colSpan={showActions ? 8 : 7} className="empty">No records found.</td></tr>}</tbody></table></div>;
+function RequestTable({ title, requests, setPath, showActions = false, onEditRequest, onWithdrawRequest, onDeleteRequest }) {
+  return <div className="table-card">{title && <h3>{title}</h3>}<table><thead><tr><th>Request No.</th><th>Document</th><th>Type</th><th>Confidentiality</th><th>Status</th><th>Date Needed</th><th>Return Due Date</th>{showActions && <th>Actions</th>}</tr></thead><tbody>{requests.length ? requests.map((request) => <tr key={request.id} onClick={() => setPath?.(`/requests/${request.id}`)}><td>{request.requestNo}</td><td>{request.documentTitle}</td><td>{request.documentType}</td><td>{request.confidentialityLevel}</td><td><span data-variant={getStatusBadgeVariant(request.computedStatus || request.status)} className={statusClass(request.computedStatus || request.status)}>{request.computedStatus || request.status}</span></td><td>{request.dateNeeded}</td><td>{request.borrowReturnDueDate || '-'}</td>{showActions && <td className="actions-cell" onClick={(event) => event.stopPropagation()}><button className="secondary small" type="button" onClick={() => onEditRequest?.(request)}>Edit</button>{['Draft', 'Needs Clarification', 'Pending Approval'].includes(request.status) && <button className="ghost small" type="button" onClick={() => onWithdrawRequest?.(request.id)}>Return to Draft</button>}<button className="danger small" type="button" onClick={() => onDeleteRequest?.(request.id)}>Delete</button></td>}</tr>) : <tr><td colSpan={showActions ? 8 : 7} className="empty">No records found.</td></tr>}</tbody></table></div>;
 }
 function RequestDetails({ request, users, processing, closures, incidents, auditLogs, currentUser, setPath }) {
   if (!request) return <Empty message="Request not found." />;
@@ -1075,6 +1227,7 @@ function Users({ users }) {
             <tr>
               <th>Name</th>
               <th>Email</th>
+              <th>Gender</th>
               <th>Role</th>
               <th>Branch</th>
               <th>Department</th>
@@ -1088,7 +1241,7 @@ function Users({ users }) {
                 <tr key={user.id} className={isEditing ? 'editing-row' : ''} onClick={() => !isEditing && startEdit(user)}>
                   <td>
                     <div className="user-cell">
-                      <img className="avatar-image" src={user.avatar || getAvatarUrl(user.name)} alt={user.name} />
+                      <img className="avatar-image" src={getAvatarUrl(isEditing ? draft.name : user.name, isEditing ? draft.gender : user.gender)} alt={user.name} />
                       <div>
                         {isEditing ? <input value={draft.name || ''} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /> : <strong>{user.name}</strong>}
                         {!isEditing && <div className="user-meta">{user.email}</div>}
@@ -1096,6 +1249,7 @@ function Users({ users }) {
                     </div>
                   </td>
                   <td>{isEditing ? <input value={draft.email || ''} onChange={(event) => setDraft((current) => ({ ...current, email: event.target.value }))} /> : user.email}</td>
+                  <td>{isEditing ? <select value={draft.gender || 'male'} onChange={(event) => setDraft((current) => ({ ...current, gender: event.target.value }))}><option value="female">Girl</option><option value="male">Boy</option></select> : user.gender === 'female' ? 'Girl' : 'Boy'}</td>
                   <td>{isEditing ? <select value={draft.role || ''} onChange={(event) => setDraft((current) => ({ ...current, role: event.target.value }))}>{Object.entries(roles).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select> : roles[user.role]}</td>
                   <td>{isEditing ? <input value={draft.branch || ''} onChange={(event) => setDraft((current) => ({ ...current, branch: event.target.value }))} /> : user.branch}</td>
                   <td>{isEditing ? <input value={draft.department || ''} onChange={(event) => setDraft((current) => ({ ...current, department: event.target.value }))} /> : user.department}</td>
@@ -1140,7 +1294,38 @@ const policyReferenceSections = [
     ],
   },
   {
-    title: 'Guidelines',
+    title: 'Storage and Security',
+    items: [
+      'Designated Locations - All active and archived documents are assigned specific recorded storage areas with strict controls to prevent loss, damage, or unauthorized access.',
+      'System Restrictions - Digital files must reside only in approved cooperative systems, servers, or secure cloud platforms.',
+      'Custody - Only the officially assigned Branch Archivist is authorized to locate, retrieve, and physically release archived hard copies.',
+    ],
+  },
+  {
+    title: 'Request and Retrieval Procedure',
+    items: [
+      'Submission: The requestor submits an online Document Retrieval Request containing the document title, purpose of retrieval, date needed, and format type, either physical or electronic.',
+      'Review and Approval: The request is routed to designated approvers depending on the user role, including Branch Heads for branch staff, Department Heads for head office staff, and the Data Privacy Officer or CEO for confidential records.',
+      'Processing: Once approved, the assigned Branch Archivist retrieves and releases the files.',
+    ],
+  },
+  {
+    title: 'Formats and Turnaround Times',
+    items: [
+      'Physical Documents: Only the Branch Archivist can handle physical files. Turnaround time is immediate or same-day for active files, and 1 to 2 working days for archived records.',
+      'Electronic Documents: Soft copies are shared through secure channels such as corporate email, shared links, or cloud platforms.',
+    ],
+  },
+  {
+    title: 'Usage, Return, and Disposal',
+    items: [
+      'Physical Tracking: When a physical document is borrowed, the archivist logs the borrower name, release date, and expected return date. Documents must be returned intact without markings, alterations, or damage.',
+      'Digital Lifespan: Electronic copies are subject to access controls and are often time-bound. Users must securely delete shared digital copies from local storage, emails, and recycle bins once the approved task is complete.',
+      'Closing Requests: A request is only considered officially Closed once the physical copy is safely refiled or the electronic access is completely revoked and deletion is confirmed.',
+    ],
+  },
+  {
+    title: 'System Guidelines',
     items: [
       'Retrieval of physical and electronic documents must be authorized, documented, and approved; access is limited to those with a legitimate business need; confidential files must be reviewed and approved by the Data Privacy Officer before release; physical documents are stored securely and released only by the authorized archivist; electronic documents are stored in approved systems and shared through secure channels; documents must be used strictly for the approved purpose; returned documents must be verified, refiled, and tracked; electronic access must be revoked and deletion confirmed when required; all retrieval and handling activities must be logged and monitored.',
     ],
@@ -1158,9 +1343,13 @@ const policyReferenceSections = [
     ],
   },
   {
-    title: 'Violations and Non-Compliance',
+    title: 'Policy Violations',
     items: [
-      'Unauthorized access, misuse, improper handling, confidentiality breaches, or failure to follow procedures may result in disciplinary action.',
+      'Any breach of this manual is subject to disciplinary action according to the HRAD Policy Manual.',
+      'Violations include accessing files beyond the authorized clearing level.',
+      'Violations include sharing, forwarding, or duplicating documents without authorization.',
+      'Violations include failing to delete digital files or return physical documents on time.',
+      'Violations include storing cooperative data on personal accounts or unauthorized devices.',
     ],
   },
   {
@@ -1168,6 +1357,58 @@ const policyReferenceSections = [
     items: [
       'Any lost, misplaced, or unaccounted physical or electronic document must be reported immediately and followed up through the prescribed incident and explanation process.',
     ],
+  },
+];
+
+const systemProcessSteps = [
+  {
+    step: '1',
+    title: 'Secure Storage',
+    owner: 'Branch Archivist',
+    status: 'Recorded Storage Location',
+    description: 'Active and archived documents are assigned designated locations; digital files stay only in approved cooperative systems, servers, or secure cloud platforms.',
+  },
+  {
+    step: '2',
+    title: 'Submit Request',
+    owner: 'Requestor',
+    status: 'Pending Approval',
+    description: 'The requestor submits an online retrieval request with document title, legitimate business purpose, date needed, file format type, and agreement confirmation.',
+  },
+  {
+    step: '3',
+    title: 'Route Approval',
+    owner: 'Approving Authority',
+    status: 'Approved / Needs Clarification / Rejected',
+    description: 'Staff requests route to Branch Heads, Branch Head requests to SACD, Head Office requests to Department Heads, and sensitive records to the DPO or CEO.',
+  },
+  {
+    step: '4',
+    title: 'Archivist Processing',
+    owner: 'Archivist',
+    status: 'Forwarded to Archivist / Processing',
+    description: 'Approved requests move to the archivist queue for custody-controlled lookup, release preparation, borrower recording, and storage location checks.',
+  },
+  {
+    step: '5',
+    title: 'Release and Monitor',
+    owner: 'Archivist / Requestor',
+    status: 'Released / Overdue / Incident Reported',
+    description: 'Physical records are processed within 1 to 2 working days, with active files taking less than a day; electronic files are shared through approved secure channels.',
+  },
+  {
+    step: '6',
+    title: 'Return or Delete',
+    owner: 'Archivist',
+    status: 'Returned / Access Revoked / Deletion Confirmed',
+    description: 'Borrowers return physical files without damage or markings, while electronic copies are revoked and securely deleted from devices, emails, local storage, and recycle bins.',
+  },
+  {
+    step: '7',
+    title: 'Close and Audit',
+    owner: 'System / Admin',
+    status: 'For Closure / Closed',
+    description: 'Closure is completed only after inspection, refiling, revocation, deletion confirmation, and incident checks pass, with every status change written to the audit trail.',
   },
 ];
 
@@ -1243,6 +1484,27 @@ function Settings({ theme, setTheme }) {
         <span className="helper-text">{notice || 'Click any item to edit, delete, or save changes.'}</span>
         <button className="secondary" type="button" onClick={() => { setEditingItem(null); setDraftValue(''); setNotice('Changes saved'); }}>Save Changes</button>
       </div>
+      <article className="info-card process-card">
+        <div className="card-header">
+          <h3>System Process</h3>
+          <span className="helper-text">End-to-end document retrieval workflow inside the system.</span>
+        </div>
+        <div className="process-flow">
+          {systemProcessSteps.map((item) => (
+            <div className="process-step" key={item.step}>
+              <div className="process-marker">{item.step}</div>
+              <div className="process-content">
+                <div className="process-heading">
+                  <h4>{item.title}</h4>
+                  <span>{item.owner}</span>
+                </div>
+                <strong>{item.status}</strong>
+                <p>{item.description}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </article>
       <article className="info-card policy-card">
         <div className="card-header">
           <h3>Document Retrieval Policy Reference</h3>

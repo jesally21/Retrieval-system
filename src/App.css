@@ -605,6 +605,56 @@ button.danger {
   padding: 16px 28px;
 }
 
+.topbar-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.hamburger-button {
+  display: none;
+  flex: 0 0 42px;
+  flex-direction: column;
+  width: 42px;
+  height: 42px;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: none;
+  padding: 0;
+}
+
+.hamburger-button span {
+  display: block;
+  width: 18px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  transition: transform .2s ease, opacity .2s ease;
+}
+
+.hamburger-button.active span:nth-child(1) {
+  transform: translateY(6px) rotate(45deg);
+}
+
+.hamburger-button.active span:nth-child(2) {
+  opacity: 0;
+}
+
+.hamburger-button.active span:nth-child(3) {
+  transform: translateY(-6px) rotate(-45deg);
+}
+
+.mobile-menu-backdrop {
+  display: none;
+}
+
 .topbar h1,
 .page-title h2 {
   margin: 0;
@@ -1192,6 +1242,81 @@ textarea {
   margin-bottom: 18px;
 }
 
+.process-card {
+  margin-bottom: 18px;
+}
+
+.process-flow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.process-step {
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  gap: 12px;
+  min-height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(6, 122, 143, 0.05);
+  padding: 14px;
+}
+
+.process-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--blue-700);
+  color: #fff;
+  font-weight: 800;
+}
+
+.process-content {
+  min-width: 0;
+}
+
+.process-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.process-heading h4 {
+  margin: 0;
+  color: var(--blue-950);
+  font-size: 14px;
+}
+
+.process-heading span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.process-content strong {
+  display: block;
+  color: var(--teal);
+  font-size: 12px;
+  line-height: 1.35;
+  margin-bottom: 8px;
+}
+
+.process-content p {
+  display: block;
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .policy-content {
   display: grid;
   gap: 12px;
@@ -1385,6 +1510,72 @@ textarea {
   color: var(--blue-900);
 }
 
+.login-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: -4px;
+}
+
+.text-button {
+  min-height: auto;
+  border: 0;
+  background: transparent;
+  color: var(--blue-700);
+  box-shadow: none;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.text-button:hover {
+  color: var(--teal);
+  text-decoration: underline;
+}
+
+.profile-editor {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  background: rgba(3, 12, 28, 0.58);
+  padding: 18px;
+}
+
+.profile-editor-panel {
+  width: min(440px, 100%);
+  max-height: calc(100dvh - 36px);
+  overflow: auto;
+  display: grid;
+  gap: 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 22px;
+  box-shadow: 0 24px 60px rgba(3, 16, 35, 0.34);
+}
+
+.profile-editor-panel h2 {
+  margin: 0;
+  color: inherit;
+}
+
+.profile-avatar-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.profile-avatar-preview span {
+  color: var(--muted);
+  font-weight: 800;
+}
+
 @media (max-width: 1180px) {
   .app-shell {
     grid-template-columns: 238px 1fr;
@@ -1445,14 +1636,47 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .hamburger-button {
+    display: inline-flex;
+  }
+
+  .mobile-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 3;
+    display: block;
+    width: 100%;
+    min-height: 100%;
+    border: 0;
+    border-radius: 0;
+    background: rgba(3, 12, 28, 0.46);
+    box-shadow: none;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s ease;
+  }
+
+  .mobile-menu-backdrop.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
   .sidebar {
-    position: sticky;
+    position: fixed;
     top: 0;
+    left: 0;
     z-index: 4;
-    height: auto;
-    max-height: none;
-    padding: 12px;
-    box-shadow: 0 12px 28px rgba(8, 29, 79, .16);
+    width: min(318px, calc(100vw - 52px));
+    height: 100dvh;
+    max-height: 100dvh;
+    padding: 14px 12px;
+    box-shadow: 18px 0 34px rgba(8, 29, 79, .28);
+    transform: translateX(-105%);
+    transition: transform .22s ease;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
   }
 
   .brand {
@@ -1464,17 +1688,15 @@ textarea {
   }
 
   .sidebar nav {
-    display: flex;
+    display: grid;
     gap: 8px;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    scrollbar-width: thin;
+    overflow-y: auto;
+    padding-bottom: 12px;
   }
 
   .sidebar nav button {
-    flex: 0 0 auto;
-    width: auto;
-    min-width: 138px;
+    width: 100%;
+    min-width: 0;
     white-space: nowrap;
   }
 
@@ -1486,16 +1708,21 @@ textarea {
     display: none;
   }
 
-  .topbar,
+  .topbar {
+    position: sticky;
+    gap: 12px;
+    align-items: stretch;
+    flex-direction: column;
+    padding: 16px 18px;
+  }
+
+  .topbar-title {
+    align-items: flex-start;
+  }
+
   .profile-tools {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .topbar {
-    position: static;
-    gap: 12px;
-    padding: 16px 18px;
   }
 
   .topbar h1,
@@ -1524,6 +1751,10 @@ textarea {
   }
 
   .route-list {
+    grid-template-columns: 1fr;
+  }
+
+  .process-flow {
     grid-template-columns: 1fr;
   }
 
@@ -1563,6 +1794,7 @@ textarea {
   .card-header,
   .queue-card,
   .list-item,
+  .process-heading,
   .info-card p,
   .route-list p {
     align-items: stretch;
@@ -1572,7 +1804,8 @@ textarea {
   .toolbar-row,
   .card-header,
   .queue-card,
-  .list-item {
+  .list-item,
+  .process-heading {
     flex-direction: column;
   }
 
@@ -1643,7 +1876,6 @@ textarea {
   }
 
   .sidebar nav button {
-    min-width: 118px;
     min-height: 38px;
     padding: 0 10px;
     font-size: 12px;
@@ -1656,6 +1888,10 @@ textarea {
 
   .topbar {
     padding: 14px;
+  }
+
+  .topbar-title {
+    gap: 10px;
   }
 
   .user-chip {

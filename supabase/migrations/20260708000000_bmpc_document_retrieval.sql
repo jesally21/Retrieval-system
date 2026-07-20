@@ -4,6 +4,7 @@ create table public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   full_name text not null,
   email text not null unique,
+  gender text not null default 'male' check (gender in ('male', 'female')),
   branch text,
   department text,
   position text,
@@ -237,6 +238,7 @@ create policy "request visibility by ownership routing and role" on public.docum
 create policy "requestors update editable own requests" on public.document_requests for update using (
   requestor_id = auth.uid() and status in ('Draft', 'Needs Clarification', 'Pending Approval')
 ) with check (requestor_id = auth.uid());
+create policy "requestors delete own requests" on public.document_requests for delete using (requestor_id = auth.uid());
 create policy "approvers update routed requests" on public.document_requests for update using (public.can_approve_request(id)) with check (public.can_approve_request(id));
 create policy "archivists update assigned or forwarded requests" on public.document_requests for update using (
   public.is_archivist() and (assigned_archivist_id = auth.uid() or status in ('Approved', 'Forwarded to Archivist', 'Processing'))
