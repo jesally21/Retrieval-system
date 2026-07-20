@@ -40,6 +40,26 @@ const initialUsers = [
   { id: 'u8', name: 'Ivy Mendoza', email: 'ivy@bmpc.local', gender: 'female', role: 'admin', branch: 'Head Office', department: 'ICT Department', position: 'System Admin', avatar: getAvatarUrl('Ivy Mendoza', 'female') },
 ];
 
+const usersStorageKey = 'bmpc-document-retrieval-users';
+
+function getDefaultUsers() {
+  return initialUsers.map((user) => ({ ...user, password: 'demo-password' }));
+}
+
+function loadStoredUsers() {
+  const fallbackUsers = getDefaultUsers();
+  try {
+    const storedUsers = JSON.parse(window.localStorage.getItem(usersStorageKey) || '[]');
+    if (!Array.isArray(storedUsers) || storedUsers.length === 0) return fallbackUsers;
+    const storedById = new Map(storedUsers.map((user) => [user.id, user]));
+    const mergedUsers = fallbackUsers.map((user) => ({ ...user, ...storedById.get(user.id) }));
+    const newUsers = storedUsers.filter((user) => !fallbackUsers.some((fallbackUser) => fallbackUser.id === user.id));
+    return [...mergedUsers, ...newUsers];
+  } catch {
+    return fallbackUsers;
+  }
+}
+
 const seedRequests = [
   {
     id: 'r1',
@@ -300,7 +320,7 @@ function buildRequestTrend(requests, dayCount = 30) {
 }
 
 function App() {
-  const [users, setUsers] = useState(() => initialUsers.map((user) => ({ ...user, password: 'demo-password' })));
+  const [users, setUsers] = useState(loadStoredUsers);
   const [currentUserId, setCurrentUserId] = useState('u8');
   const [path, setPathState] = useState('/dashboard');
   const [theme, setTheme] = useState('dark');
@@ -400,6 +420,14 @@ function App() {
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [path]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(usersStorageKey, JSON.stringify(users));
+    } catch {
+      // Keep the in-session update even if browser storage is full or unavailable.
+    }
+  }, [users]);
 
   useEffect(() => {
     document.body.classList.toggle('dark', theme === 'dark');
@@ -1257,6 +1285,10 @@ function Users({ users }) {
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState({});
 
+  useEffect(() => {
+    setUserList(users);
+  }, [users]);
+
   const startEdit = (user) => {
     setEditingId(user.id);
     setDraft(user);
@@ -1299,7 +1331,7 @@ function Users({ users }) {
                 <tr key={user.id} className={isEditing ? 'editing-row' : ''} onClick={() => !isEditing && startEdit(user)}>
                   <td>
                     <div className="user-cell">
-                      <img className="avatar-image" src={getAvatarUrl(isEditing ? draft.name : user.name, isEditing ? draft.gender : user.gender)} alt={user.name} />
+                      <img className="avatar-image" src={(isEditing ? draft.avatar : user.avatar) || getAvatarUrl(isEditing ? draft.name : user.name, isEditing ? draft.gender : user.gender)} alt={user.name} />
                       <div>
                         {isEditing ? <input value={draft.name || ''} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /> : <strong>{user.name}</strong>}
                         {!isEditing && <div className="user-meta">{user.email}</div>}

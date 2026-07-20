@@ -3,9 +3,10 @@ import { render, screen } from '@testing-library/react';
 import App, { getAvatarUrl } from './App';
 
 describe('avatar selection', () => {
-  test('uses Zhao Lusi for female users and Chen Zeyuan for male users', () => {
-    expect(getAvatarUrl('Mara Dela Cruz', 'female')).toContain('Zhao_Lusi');
-    expect(getAvatarUrl('Ramon Salazar', 'male')).toContain('Chen_Zheyuan');
+  test('generates inline SVG avatars for female and male users', () => {
+    expect(getAvatarUrl('Mara Dela Cruz', 'female')).toContain('data:image/svg+xml');
+    expect(decodeURIComponent(getAvatarUrl('Mara Dela Cruz', 'female'))).toContain('#f7b7d8');
+    expect(decodeURIComponent(getAvatarUrl('Ramon Salazar', 'male'))).toContain('#8bd3ff');
   });
 });
 

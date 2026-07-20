@@ -36,7 +36,25 @@ npm.cmd run build
 
 ## Supabase
 
-Copy `.env.example` to your local environment file and set the Supabase URL and anon key.
+This project is configured for the local Supabase API at `http://127.0.0.1:54321`.
+
+Start the local Supabase stack:
+
+```bash
+supabase start
+```
+
+If PowerShell blocks `supabase`, use:
+
+```bash
+supabase.cmd start
+```
+
+Copy `.env.example` to your local environment file and set the Supabase anon key from:
+
+```bash
+supabase status
+```
 
 Apply the full database schema in the Supabase SQL Editor:
 
