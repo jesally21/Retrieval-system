@@ -41,6 +41,31 @@ const initialUsers = [
 ];
 
 const usersStorageKey = 'bmpc-document-retrieval-users';
+const requestsStorageKey = 'bmpc-document-retrieval-requests';
+const processingStorageKey = 'bmpc-document-retrieval-processing';
+const closuresStorageKey = 'bmpc-document-retrieval-closures';
+const incidentsStorageKey = 'bmpc-document-retrieval-incidents';
+const auditLogsStorageKey = 'bmpc-document-retrieval-audit-logs';
+const settingsStorageKey = 'bmpc-document-retrieval-settings';
+
+function loadStoredValue(key, fallbackValue) {
+  if (typeof window === 'undefined') return fallbackValue;
+  try {
+    const storedValue = JSON.parse(window.localStorage.getItem(key) || 'null');
+    return storedValue === null ? fallbackValue : storedValue;
+  } catch {
+    return fallbackValue;
+  }
+}
+
+function saveStoredValue(key, value) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Keep the in-session update even if browser storage is full or unavailable.
+  }
+}
 
 function getDefaultUsers() {
   return initialUsers.map((user) => ({ ...user, password: 'demo-password' }));
@@ -48,16 +73,12 @@ function getDefaultUsers() {
 
 function loadStoredUsers() {
   const fallbackUsers = getDefaultUsers();
-  try {
-    const storedUsers = JSON.parse(window.localStorage.getItem(usersStorageKey) || '[]');
-    if (!Array.isArray(storedUsers) || storedUsers.length === 0) return fallbackUsers;
-    const storedById = new Map(storedUsers.map((user) => [user.id, user]));
-    const mergedUsers = fallbackUsers.map((user) => ({ ...user, ...storedById.get(user.id) }));
-    const newUsers = storedUsers.filter((user) => !fallbackUsers.some((fallbackUser) => fallbackUser.id === user.id));
-    return [...mergedUsers, ...newUsers];
-  } catch {
-    return fallbackUsers;
-  }
+  const storedUsers = loadStoredValue(usersStorageKey, []);
+  if (!Array.isArray(storedUsers) || storedUsers.length === 0) return fallbackUsers;
+  const storedById = new Map(storedUsers.map((user) => [user.id, user]));
+  const mergedUsers = fallbackUsers.map((user) => ({ ...user, ...storedById.get(user.id) }));
+  const newUsers = storedUsers.filter((user) => !fallbackUsers.some((fallbackUser) => fallbackUser.id === user.id));
+  return [...mergedUsers, ...newUsers];
 }
 
 const seedRequests = [
@@ -327,8 +348,8 @@ function App() {
   const [editingRequestId, setEditingRequestId] = useState(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const pathHistoryRef = useRef([]);
-  const [requests, setRequests] = useState(seedRequests);
-  const [processing, setProcessing] = useState({
+  const [requests, setRequests] = useState(() => loadStoredValue(requestsStorageKey, seedRequests));
+  const [processing, setProcessing] = useState(() => loadStoredValue(processingStorageKey, {
     r3: {
       dateReceived: '2026-07-10',
       dateReleased: '',
@@ -358,8 +379,8 @@ function App() {
       releaseRemarks: 'Released and returned same day.',
       archivistId: 'u7',
     },
-  });
-  const [closures, setClosures] = useState({
+  }));
+  const [closures, setClosures] = useState(() => loadStoredValue(closuresStorageKey, {
     r6: {
       dateReturned: '2026-07-10',
       conditionUponReturn: 'Complete',
@@ -372,8 +393,8 @@ function App() {
       closedAt: '2026-07-10 16:45',
       closureRemarks: 'Verified complete and refiled.',
     },
-  });
-  const [incidents, setIncidents] = useState([
+  }));
+  const [incidents, setIncidents] = useState(() => loadStoredValue(incidentsStorageKey, [
     {
       id: 'i1',
       requestId: 'r1',
@@ -384,13 +405,13 @@ function App() {
       status: 'Open',
       createdAt: '2026-07-10 10:15',
     },
-  ]);
-  const [auditLogs, setAuditLogs] = useState([
+  ]));
+  const [auditLogs, setAuditLogs] = useState(() => loadStoredValue(auditLogsStorageKey, [
     { id: 'a1', requestId: 'r1', userId: 'u2', action: 'Approved and forwarded', oldStatus: 'Pending Approval', newStatus: 'Forwarded to Archivist', remarks: 'Business purpose validated.', createdAt: '2026-07-08 09:20' },
     { id: 'a2', requestId: 'r3', userId: 'u5', action: 'Approved for controlled processing', oldStatus: 'Pending Approval', newStatus: 'Processing', remarks: 'Confidential material may be reviewed in records room only.', createdAt: '2026-07-10 08:40' },
     { id: 'a3', requestId: 'r4', userId: 'u7', action: 'Released electronic access', oldStatus: 'Forwarded to Archivist', newStatus: 'Released', remarks: 'Read-only encrypted link issued.', createdAt: '2026-07-10 11:05' },
     { id: 'a4', requestId: 'r6', userId: 'u7', action: 'Closure evaluated', oldStatus: 'Returned', newStatus: 'Closed', remarks: 'Folder complete and refiled.', createdAt: '2026-07-10 16:45' },
-  ]);
+  ]));
   const currentUser = users.find((user) => user.id === currentUserId) || users[0];
   const setPath = useCallback((nextPath, options = {}) => {
     setPathState((currentPath) => {
@@ -422,12 +443,28 @@ function App() {
   }, [path]);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(usersStorageKey, JSON.stringify(users));
-    } catch {
-      // Keep the in-session update even if browser storage is full or unavailable.
-    }
+    saveStoredValue(usersStorageKey, users);
   }, [users]);
+
+  useEffect(() => {
+    saveStoredValue(requestsStorageKey, requests);
+  }, [requests]);
+
+  useEffect(() => {
+    saveStoredValue(processingStorageKey, processing);
+  }, [processing]);
+
+  useEffect(() => {
+    saveStoredValue(closuresStorageKey, closures);
+  }, [closures]);
+
+  useEffect(() => {
+    saveStoredValue(incidentsStorageKey, incidents);
+  }, [incidents]);
+
+  useEffect(() => {
+    saveStoredValue(auditLogsStorageKey, auditLogs);
+  }, [auditLogs]);
 
   useEffect(() => {
     document.body.classList.toggle('dark', theme === 'dark');
@@ -588,7 +625,7 @@ function App() {
         {allowedPath && path === '/incidents' && <Incidents {...pageProps} />}
         {allowedPath && path === '/incidents/new' && <NewIncident {...pageProps} />}
         {allowedPath && path === '/reports' && <Reports {...pageProps} />}
-        {allowedPath && path === '/users' && <Users users={users} />}
+        {allowedPath && path === '/users' && <Users users={users} setUsers={setUsers} currentUserId={currentUser.id} />}
         {allowedPath && path === '/settings' && <Settings theme={theme} setTheme={setTheme} />}
         {allowedPath && path === '/audit-logs' && <AuditLogsPage logs={auditLogs} users={users} requests={requests} setPath={setPath} />}
       </main>
@@ -1280,7 +1317,7 @@ function IncidentTable({ incidents, requests, setPath }) {
   return <div className="table-card"><table><thead><tr><th>Request</th><th>Type</th><th>Description</th><th>Action Taken</th><th>Status</th></tr></thead><tbody>{incidents.map((incident) => <tr key={incident.id} onClick={() => setPath(`/requests/${incident.requestId}`)}><td>{requests.find((request) => request.id === incident.requestId)?.requestNo}</td><td>{incident.incidentType}</td><td>{incident.incidentDescription}</td><td>{incident.actionTaken}</td><td>{incident.status}</td></tr>)}{!incidents.length && <tr><td colSpan="5" className="empty">No incident reports.</td></tr>}</tbody></table></div>;
 }
 
-function Users({ users }) {
+function Users({ users, setUsers, currentUserId }) {
   const [userList, setUserList] = useState(users);
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState({});
@@ -1295,13 +1332,20 @@ function Users({ users }) {
   };
 
   const saveEdit = () => {
-    setUserList((items) => items.map((item) => (item.id === editingId ? { ...item, ...draft } : item)));
+    setUsers((items) => items.map((item) => {
+      if (item.id !== editingId) return item;
+      const name = draft.name?.trim() || item.name;
+      const gender = draft.gender || item.gender;
+      const avatar = draft.avatarCustom ? draft.avatar : getAvatarUrl(name, gender);
+      return { ...item, ...draft, name, email: draft.email?.trim().toLowerCase() || item.email, avatar };
+    }));
     setEditingId(null);
     setDraft({});
   };
 
   const deleteUser = (id) => {
-    setUserList((items) => items.filter((item) => item.id !== id));
+    if (id === currentUserId) return;
+    setUsers((items) => items.filter((item) => item.id !== id));
     if (editingId === id) {
       setEditingId(null);
       setDraft({});
@@ -1352,7 +1396,7 @@ function Users({ users }) {
                     ) : (
                       <>
                         <button className="secondary" type="button" onClick={() => startEdit(user)}>Edit</button>
-                        <button className="danger" type="button" onClick={() => deleteUser(user.id)}>Delete</button>
+                        <button className="danger" type="button" disabled={user.id === currentUserId} onClick={() => deleteUser(user.id)}>Delete</button>
                       </>
                     )}
                   </td>
@@ -1503,14 +1547,23 @@ const systemProcessSteps = [
 ];
 
 function Settings({ theme, setTheme }) {
-  const [branchesList, setBranchesList] = useState(branches);
-  const [departmentsList, setDepartmentsList] = useState(departments);
-  const [categoriesList, setCategoriesList] = useState(['Member Records', 'Finance Records', 'HR Records', 'Board Records']);
+  const storedSettings = useMemo(() => loadStoredValue(settingsStorageKey, {}), []);
+  const [branchesList, setBranchesList] = useState(() => storedSettings.branches || branches);
+  const [departmentsList, setDepartmentsList] = useState(() => storedSettings.departments || departments);
+  const [categoriesList, setCategoriesList] = useState(() => storedSettings.categories || ['Member Records', 'Finance Records', 'HR Records', 'Board Records']);
   const [editingItem, setEditingItem] = useState(null);
   const [draftValue, setDraftValue] = useState('');
   const [notice, setNotice] = useState('');
   const [addingSection, setAddingSection] = useState(null);
   const [newItemValue, setNewItemValue] = useState('');
+
+  useEffect(() => {
+    saveStoredValue(settingsStorageKey, {
+      branches: branchesList,
+      departments: departmentsList,
+      categories: categoriesList,
+    });
+  }, [branchesList, departmentsList, categoriesList]);
 
   const startEdit = (section, index, value) => {
     setEditingItem({ section, index });
@@ -1521,25 +1574,19 @@ function Settings({ theme, setTheme }) {
   const saveEdit = () => {
     const value = draftValue.trim();
     if (!editingItem || !value) return;
-    if (editingItem.section === 'branches') {
-      setBranchesList((items) => items.map((item, index) => (index === editingItem.index ? value : item)));
-    }
-    if (editingItem.section === 'departments') {
-      setDepartmentsList((items) => items.map((item, index) => (index === editingItem.index ? value : item)));
-    }
-    if (editingItem.section === 'categories') {
-      setCategoriesList((items) => items.map((item, index) => (index === editingItem.index ? value : item)));
-    }
+    if (editingItem.section === 'branches') setBranchesList((items) => items.map((item, index) => (index === editingItem.index ? value : item)));
+    if (editingItem.section === 'departments') setDepartmentsList((items) => items.map((item, index) => (index === editingItem.index ? value : item)));
+    if (editingItem.section === 'categories') setCategoriesList((items) => items.map((item, index) => (index === editingItem.index ? value : item)));
     setEditingItem(null);
     setDraftValue('');
-    setNotice('Changes saved');
+    setNotice('Changes saved permanently');
   };
 
   const deleteItem = (section, index) => {
     if (section === 'branches') setBranchesList((items) => items.filter((_, itemIndex) => itemIndex !== index));
     if (section === 'departments') setDepartmentsList((items) => items.filter((_, itemIndex) => itemIndex !== index));
     if (section === 'categories') setCategoriesList((items) => items.filter((_, itemIndex) => itemIndex !== index));
-    setNotice('Item removed');
+    setNotice('Item removed permanently');
   };
 
   const addItem = (section) => {
@@ -1558,7 +1605,7 @@ function Settings({ theme, setTheme }) {
     if (addingSection === 'categories') setCategoriesList((items) => [...items, value]);
     setAddingSection(null);
     setNewItemValue('');
-    setNotice('New item added');
+    setNotice('New item added permanently');
   };
 
   const cancelNewItem = () => {
@@ -1572,7 +1619,7 @@ function Settings({ theme, setTheme }) {
       <PageTitle title="System Settings" subtitle="Branches, departments, document categories, routing, and security settings." />
       <div className="toolbar-row">
         <span className="helper-text">{notice || 'Click any item to edit, delete, or save changes.'}</span>
-        <button className="secondary" type="button" onClick={() => { setEditingItem(null); setDraftValue(''); setNotice('Changes saved'); }}>Save Changes</button>
+        <button className="secondary" type="button" onClick={() => { setEditingItem(null); setDraftValue(''); saveStoredValue(settingsStorageKey, { branches: branchesList, departments: departmentsList, categories: categoriesList }); setNotice('Changes saved permanently'); }}>Save Changes</button>
       </div>
       <article className="info-card process-card">
         <div className="card-header">
