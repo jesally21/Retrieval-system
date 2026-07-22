@@ -915,7 +915,6 @@ function Dashboard({ currentUser, requests, processing, incidents, setPath }) {
     ? my.filter((request) => openIncidents.some((incident) => incident.requestId === request.id))
     : my.filter(activeMetric.filter);
   const trendDateRequests = selectedTrendDate ? my.filter((request) => request.requestDate === selectedTrendDate) : [];
-  const dashboardStatuses = ['All', 'Pending Approval', 'Forwarded to Archivist', 'Processing', 'Released', 'Closed', 'Rejected'];
   const pendingCount = my.filter((request) => request.status === 'Pending Approval').length;
   const approvedCount = my.filter((request) => ['Approved', 'Forwarded to Archivist', 'Processing', 'Released', 'Closed'].includes(request.status)).length;
   const rejectedCount = my.filter((request) => request.status === 'Rejected').length;
@@ -943,12 +942,12 @@ function Dashboard({ currentUser, requests, processing, incidents, setPath }) {
       <div className="dashboard-reference">
         <div className="dashboard-controls">
           <label className="dashboard-search">
-            <span aria-hidden="true">?</span>
+            <svg className="dashboard-search-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m16 16 4 4" />
+            </svg>
             <input value={requestSearch} onChange={(event) => setRequestSearch(event.target.value)} placeholder="Search by request ID or document name" />
           </label>
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter by status">
-            {dashboardStatuses.map((status) => <option value={status} key={status}>{status === 'All' ? 'Pending' : status}</option>)}
-          </select>
         </div>
         <div className="dashboard-content-layout">
           <aside className="dashboard-side-panel">
