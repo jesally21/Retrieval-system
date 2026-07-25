@@ -145,7 +145,7 @@ create table public.document_categories (
 );
 
 insert into public.branches (name) values
-  ('Head Office'), ('Barbaza'), ('San Jose'), ('Hamtic'), ('Sibalom'), ('Laua-an'), ('San Remigio')
+  ('Main Office'), ('Culasi'), ('Sibalom'), ('San Jose'), ('Balasan'), ('Barotac Viejo'),  ('Molo'), ('Janiuay'), ('Caticlan'), ('Kalibo'), ('San Remigio')
 on conflict (name) do nothing;
 
 insert into public.departments (name) values

@@ -12,9 +12,19 @@ const roles = {
   admin: 'Admin / ICT',
 };
 
-const branches = ['Head Office', 'Barbaza', 'San Jose', 'Hamtic', 'Sibalom', 'Laua-an', 'San Remigio'];
+const branches = ['Main Office', 'Culasi', 'Sibalom', 'San Jose', 'Balasan', 'Barotac Viejo', 'Molo', 'Janiuay', 'Caticlan', 'Kalibo', 'San Remigio'];
 const departments = ['ICT Department', 'HRAD', 'Accounting', 'Audit', 'SACD', 'Lending', 'Savings', 'Broadband Division', 'Records / Archive'];
 const statuses = ['Draft', 'Pending Approval', 'Needs Clarification', 'Rejected', 'Approved', 'Forwarded to Archivist', 'Processing', 'Released', 'Returned', 'Access Revoked', 'Deletion Confirmed', 'For Closure', 'Closed', 'Incident Reported', 'Overdue'];
+const branchAliases = {
+  'Head Office': 'Main Office',
+  Barbaza: 'Culasi',
+  Hamtic: 'Balasan',
+  'Laua-an': 'Janiuay',
+};
+
+function normalizeBranchName(branch) {
+  return branchAliases[branch] || branch || branches[0];
+}
 
 export function getAvatarUrl(name, gender) {
   const isFemale = gender === 'female';
@@ -30,14 +40,14 @@ export function getAvatarUrl(name, gender) {
 }
 
 const initialUsers = [
-  { id: 'u1', name: 'Mara Dela Cruz', email: 'mara@bmpc.local', gender: 'female', role: 'requestor', branch: 'Barbaza', department: 'Savings', position: 'Member Services Associate', avatar: getAvatarUrl('Mara Dela Cruz', 'female') },
-  { id: 'u2', name: 'Ramon Salazar', email: 'ramon@bmpc.local', gender: 'male', role: 'branch_head', branch: 'Barbaza', department: 'Branch Operations', position: 'Branch Head', avatar: getAvatarUrl('Ramon Salazar', 'male') },
-  { id: 'u3', name: 'Lina Reyes', email: 'lina@bmpc.local', gender: 'female', role: 'sacd_head', branch: 'Head Office', department: 'SACD', position: 'SACD Head', avatar: getAvatarUrl('Lina Reyes', 'female') },
-  { id: 'u4', name: 'Ana Villanueva', email: 'ana@bmpc.local', gender: 'female', role: 'department_head', branch: 'Head Office', department: 'ICT Department', position: 'Department Head', avatar: getAvatarUrl('Ana Villanueva', 'female') },
-  { id: 'u5', name: 'Joel Santos', email: 'joel@bmpc.local', gender: 'male', role: 'dpo', branch: 'Head Office', department: 'Compliance', position: 'Data Privacy Officer', avatar: getAvatarUrl('Joel Santos', 'male') },
-  { id: 'u6', name: 'Leonil M. Alabado', email: 'leonil@bmpc.local', gender: 'male', role: 'ceo', branch: 'Head Office', department: 'Executive', position: 'CEO', avatar: getAvatarUrl('Leonil M. Alabado', 'male') },
-  { id: 'u7', name: 'Nico Flores', email: 'nico@bmpc.local', gender: 'male', role: 'archivist', branch: 'Head Office', department: 'Records / Archive', position: 'Archivist', avatar: getAvatarUrl('Nico Flores', 'male') },
-  { id: 'u8', name: 'Ivy Mendoza', email: 'ivy@bmpc.local', gender: 'female', role: 'admin', branch: 'Head Office', department: 'ICT Department', position: 'System Admin', avatar: getAvatarUrl('Ivy Mendoza', 'female') },
+  { id: 'u1', name: 'Mara Dela Cruz', email: 'mara@bmpc.local', gender: 'female', role: 'requestor', branch: 'Culasi', department: 'Savings', position: 'Member Services Associate', avatar: getAvatarUrl('Mara Dela Cruz', 'female') },
+  { id: 'u2', name: 'Ramon Salazar', email: 'ramon@bmpc.local', gender: 'male', role: 'branch_head', branch: 'Culasi', department: 'Branch Operations', position: 'Branch Head', avatar: getAvatarUrl('Ramon Salazar', 'male') },
+  { id: 'u3', name: 'Lina Reyes', email: 'lina@bmpc.local', gender: 'female', role: 'sacd_head', branch: 'Main Office', department: 'SACD', position: 'SACD Head', avatar: getAvatarUrl('Lina Reyes', 'female') },
+  { id: 'u4', name: 'Ana Villanueva', email: 'ana@bmpc.local', gender: 'female', role: 'department_head', branch: 'Main Office', department: 'ICT Department', position: 'Department Head', avatar: getAvatarUrl('Ana Villanueva', 'female') },
+  { id: 'u5', name: 'Joel Santos', email: 'joel@bmpc.local', gender: 'male', role: 'dpo', branch: 'Main Office', department: 'Compliance', position: 'Data Privacy Officer', avatar: getAvatarUrl('Joel Santos', 'male') },
+  { id: 'u6', name: 'Leonil M. Alabado', email: 'leonil@bmpc.local', gender: 'male', role: 'ceo', branch: 'Main Office', department: 'Executive', position: 'CEO', avatar: getAvatarUrl('Leonil M. Alabado', 'male') },
+  { id: 'u7', name: 'Nico Flores', email: 'nico@bmpc.local', gender: 'male', role: 'archivist', branch: 'Main Office', department: 'Records / Archive', position: 'Archivist', avatar: getAvatarUrl('Nico Flores', 'male') },
+  { id: 'u8', name: 'Ivy Mendoza', email: 'ivy@bmpc.local', gender: 'female', role: 'admin', branch: 'Main Office', department: 'ICT Department', position: 'System Admin', avatar: getAvatarUrl('Ivy Mendoza', 'female') },
 ];
 
 const usersStorageKey = 'bmpc-document-retrieval-users';
@@ -76,8 +86,13 @@ function loadStoredUsers() {
   const storedUsers = loadStoredValue(usersStorageKey, []);
   if (!Array.isArray(storedUsers) || storedUsers.length === 0) return fallbackUsers;
   const storedById = new Map(storedUsers.map((user) => [user.id, user]));
-  const mergedUsers = fallbackUsers.map((user) => ({ ...user, ...storedById.get(user.id) }));
-  const newUsers = storedUsers.filter((user) => !fallbackUsers.some((fallbackUser) => fallbackUser.id === user.id));
+  const mergedUsers = fallbackUsers.map((user) => {
+    const storedUser = storedById.get(user.id);
+    return { ...user, ...storedUser, branch: normalizeBranchName(storedUser?.branch || user.branch) };
+  });
+  const newUsers = storedUsers
+    .filter((user) => !fallbackUsers.some((fallbackUser) => fallbackUser.id === user.id))
+    .map((user) => ({ ...user, branch: normalizeBranchName(user.branch) }));
   return [...mergedUsers, ...newUsers];
 }
 
@@ -96,7 +111,7 @@ const seedRequests = [
     dateNeeded: '2026-07-09',
     borrowReturnDueDate: '2026-07-13',
     remarks: 'Original ledger needed for review.',
-    branch: 'Barbaza',
+    branch: 'Culasi',
     department: 'Savings',
     position: 'Member Services Associate',
     status: 'Forwarded to Archivist',
@@ -118,7 +133,7 @@ const seedRequests = [
     dateNeeded: '2026-07-10',
     borrowReturnDueDate: '2026-07-14',
     remarks: 'Read-only copy preferred.',
-    branch: 'Head Office',
+    branch: 'Main Office',
     department: 'ICT Department',
     position: 'Department Head',
     status: 'Pending Approval',
@@ -140,7 +155,7 @@ const seedRequests = [
     dateNeeded: '2026-07-11',
     borrowReturnDueDate: '2026-07-13',
     remarks: 'Release only inside records room.',
-    branch: 'Head Office',
+    branch: 'Sibalom',
     department: 'SACD',
     position: 'SACD Head',
     status: 'Processing',
@@ -162,7 +177,7 @@ const seedRequests = [
     dateNeeded: '2026-07-12',
     borrowReturnDueDate: '2026-07-12',
     remarks: 'Temporary encrypted access requested.',
-    branch: 'Head Office',
+    branch: 'Main Office',
     department: 'Compliance',
     position: 'Data Privacy Officer',
     status: 'Released',
@@ -184,7 +199,7 @@ const seedRequests = [
     dateNeeded: '2026-07-13',
     borrowReturnDueDate: '2026-07-17',
     remarks: 'Branch-only copy.',
-    branch: 'Barbaza',
+    branch: 'Kalibo',
     department: 'Savings',
     position: 'Member Services Associate',
     status: 'Needs Clarification',
@@ -206,7 +221,7 @@ const seedRequests = [
     dateNeeded: '2026-07-10',
     borrowReturnDueDate: '2026-07-10',
     remarks: 'Folder includes supplier invoices.',
-    branch: 'Head Office',
+    branch: 'Main Office',
     department: 'ICT Department',
     position: 'Department Head',
     status: 'Closed',
@@ -231,8 +246,8 @@ function determineApprover(profile, request, users) {
   if (request.confidentialityLevel === 'Highly Sensitive') return users.find((user) => user.role === 'dpo')?.id || users.find((user) => user.role === 'ceo')?.id || '';
   if (request.confidentialityLevel === 'Confidential') return users.find((user) => user.role === 'dpo')?.id || users.find((user) => user.role === 'ceo')?.id || '';
   if (profile.role === 'branch_head') return users.find((user) => user.role === 'sacd_head')?.id || '';
-  if (requestBranch !== 'Head Office') return users.find((user) => user.role === 'branch_head' && user.branch === requestBranch)?.id || '';
-  if (requestBranch === 'Head Office') {
+  if (requestBranch !== 'Main Office') return users.find((user) => user.role === 'branch_head' && user.branch === requestBranch)?.id || '';
+  if (requestBranch === 'Main Office') {
     return users.find((user) => user.role === 'department_head' && user.department === profile.department)?.id || users.find((user) => user.role === 'department_head')?.id || '';
   }
   return users.find((user) => user.role === 'sacd_head')?.id || '';
@@ -254,6 +269,12 @@ function canCloseRequest(request, processing, closure, incidents = []) {
 function isOverdue(request, processing) {
   const dueDate = processing?.expectedReturnDate || request.borrowReturnDueDate;
   return request.documentType === 'Physical' && request.status !== 'Closed' && request.status !== 'Returned' && dueDate && dueDate < today();
+}
+
+function loadStoredRequests() {
+  const storedRequests = loadStoredValue(requestsStorageKey, seedRequests);
+  if (!Array.isArray(storedRequests)) return seedRequests;
+  return storedRequests.map((request) => ({ ...request, branch: normalizeBranchName(request.branch) }));
 }
 
 function statusClass(status) {
@@ -306,40 +327,6 @@ function validateRequestForm(form) {
   return errors;
 }
 
-function addDays(date, days) {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-}
-
-function toDateKey(date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function formatDateTick(dateKey) {
-  const date = new Date(`${dateKey}T00:00:00`);
-  return `${date.getMonth() + 1}/${date.getDate()}`;
-}
-
-function buildRequestTrend(requests, dayCount = 30) {
-  const latestRequestDate = requests.reduce((latest, request) => {
-    if (!request.requestDate) return latest;
-    return request.requestDate > latest ? request.requestDate : latest;
-  }, today());
-  const endDate = new Date(`${latestRequestDate}T00:00:00`);
-  const startDate = addDays(endDate, -(dayCount - 1));
-  const countsByDate = requests.reduce((counts, request) => {
-    if (!request.requestDate) return counts;
-    counts[request.requestDate] = (counts[request.requestDate] || 0) + 1;
-    return counts;
-  }, {});
-
-  return Array.from({ length: dayCount }, (_, index) => {
-    const dateKey = toDateKey(addDays(startDate, index));
-    return { date: dateKey, count: countsByDate[dateKey] || 0 };
-  });
-}
-
 function App() {
   const [users, setUsers] = useState(loadStoredUsers);
   const [currentUserId, setCurrentUserId] = useState('u8');
@@ -348,7 +335,7 @@ function App() {
   const [editingRequestId, setEditingRequestId] = useState(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const pathHistoryRef = useRef([]);
-  const [requests, setRequests] = useState(() => loadStoredValue(requestsStorageKey, seedRequests));
+  const [requests, setRequests] = useState(loadStoredRequests);
   const [processing, setProcessing] = useState(() => loadStoredValue(processingStorageKey, {
     r3: {
       dateReceived: '2026-07-10',
@@ -634,50 +621,52 @@ function App() {
 }
 
 function SidebarIcon({ name }) {
-  const commonProps = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' };
+  const commonProps = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': 'true' };
   switch (name) {
     case 'dashboard':
-      return <svg {...commonProps}><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="4" rx="1" /><rect x="14" y="13" width="7" height="8" rx="1" /><rect x="3" y="13" width="7" height="8" rx="1" /></svg>;
+      return <svg {...commonProps}><rect className="icon-shape-a" x="4" y="4" width="7" height="7" rx="1.5" /><rect className="icon-shape-b" x="13" y="4" width="7" height="7" rx="1.5" /><rect className="icon-shape-c" x="4" y="13" width="7" height="7" rx="1.5" /><rect className="icon-shape-a" x="13" y="13" width="7" height="7" rx="1.5" opacity=".8" /></svg>;
     case 'request':
-      return <svg {...commonProps}><path d="M7 3h8l4 4v14H7z" /><path d="M15 3v4h4" /><path d="M9 12h6" /><path d="M9 16h6" /></svg>;
+      return <svg {...commonProps}><path className="icon-shape-a" d="M6 3h8l5 5v13H6z" /><path className="icon-shape-b" d="M14 3v5h5" /><path className="icon-cutout" d="M9 12h6v1.6H9zm0 3.8h5v1.6H9z" /></svg>;
     case 'approval':
-      return <svg {...commonProps}><path d="M5 12l4 4 10-10" /><path d="M5 19h14" /></svg>;
+      return <svg {...commonProps}><circle className="icon-shape-a" cx="12" cy="12" r="9" /><path className="icon-shape-b" d="M12 3a9 9 0 0 1 9 9h-9z" opacity=".8" /><path className="icon-cutout" d="m8 12.3 2.3 2.3 5.7-6.1 1.8 1.7-7.5 7.7-4.1-4z" /></svg>;
     case 'archive':
-      return <svg {...commonProps}><path d="M3 6h18" /><path d="M5 6v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6" /><path d="M9 10h6" /><path d="M9 14h6" /></svg>;
+      return <svg {...commonProps}><path className="icon-shape-a" d="M4 8h16v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3z" /><path className="icon-shape-b" d="M3 4h18v5H3z" /><path className="icon-cutout" d="M8.5 12h7v1.8h-7z" /></svg>;
+    case 'alert':
+      return <svg {...commonProps}><path className="icon-shape-a" d="m12 3 10 18H2z" /><path className="icon-shape-b" d="m12 3 10 18H12z" opacity=".72" /><path className="icon-cutout" d="M11 8.5h2v6h-2zm0 7.5h2v2h-2z" /></svg>;
     case 'reports':
-      return <svg {...commonProps}><path d="M5 19V9" /><path d="M12 19V5" /><path d="M19 19v-7" /></svg>;
+      return <svg {...commonProps}><path className="icon-shape-a" d="M5 20V9h4v11z" /><path className="icon-shape-b" d="M10 20V4h4v16z" /><path className="icon-shape-c" d="M15 20v-8h4v8z" /></svg>;
     case 'users':
-      return <svg {...commonProps}><path d="M16 19v-1a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v1" /><circle cx="10" cy="7" r="3" /><path d="M17 8a3 3 0 1 1 0 6" /></svg>;
+      return <svg {...commonProps}><circle className="icon-shape-a" cx="9" cy="8" r="4" /><circle className="icon-shape-b" cx="16" cy="9" r="3" /><path className="icon-shape-c" d="M3 20c.8-4.2 3.1-6.4 6-6.4s5.2 2.2 6 6.4z" /><path className="icon-shape-b" d="M13 20c.5-2.8 2-4.4 4-4.4s3.5 1.6 4 4.4z" opacity=".78" /></svg>;
     case 'settings':
-      return <svg {...commonProps}><circle cx="12" cy="12" r="3" /><path d="M19 12a7.2 7.2 0 0 0-.1-1l2-1.5-2-3.5-2.4 1a7.9 7.9 0 0 0-1.7-1l-.3-2.5h-4l-.3 2.5a7.9 7.9 0 0 0-1.7 1L5 6l-2 3.5 2 1.5a7.2 7.2 0 0 0 0 2l-2 1.5 2 3.5 2.4-1a7.9 7.9 0 0 0 1.7 1l.3 2.5h4l.3-2.5a7.9 7.9 0 0 0 1.7-1l2.4 1 2-3.5-2-1.5c.1-.3.1-.7.1-1Z" /></svg>;
+      return <svg {...commonProps}><path className="icon-shape-a" d="M12 2 15 6l5-.4-1.4 4.8L22 14l-4.7 1.7L16 21l-4-3-4 3-1.3-5.3L2 14l3.4-3.6L4 5.6 9 6z" /><circle className="icon-cutout" cx="12" cy="12" r="3.4" /></svg>;
     case 'audit':
-      return <svg {...commonProps}><path d="M7 3h10l3 3v14H7z" /><path d="M17 3v4h4" /><path d="M9 11h8" /><path d="M9 15h5" /></svg>;
+      return <svg {...commonProps}><path className="icon-shape-a" d="M6 3h10l4 4v14H6z" /><path className="icon-shape-b" d="M16 3v5h4" /><path className="icon-cutout" d="M9 11h7v1.6H9zm0 3.5h5v1.6H9z" /><path className="icon-shape-c" d="m15 17 1.1 1.1 2.5-3" /></svg>;
     default:
-      return <svg {...commonProps}><path d="M4 7h16" /><path d="M4 12h16" /><path d="M4 17h16" /></svg>;
+      return <svg {...commonProps}><circle className="icon-shape-a" cx="12" cy="12" r="9" /><circle className="icon-cutout" cx="12" cy="12" r="4" /></svg>;
   }
 }
 
 function ThemeIcon({ theme }) {
   const commonProps = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' };
   if (theme === 'dark') {
-    return <svg {...commonProps} aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 7.5A9 9 0 1 1 12 3Z" /></svg>;
+    return <svg {...commonProps} aria-hidden="true"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.6 6.6 0 0 0 9.8 9.8Z" /><path d="M17 4h.01" /></svg>;
   }
-  return <svg {...commonProps} aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>;
+  return <svg {...commonProps} aria-hidden="true"><circle cx="12" cy="12" r="4.5" /><path d="M12 2.5v2" /><path d="M12 19.5v2" /><path d="M4.5 12h-2" /><path d="M21.5 12h-2" /><path d="m5.6 5.6-1.4-1.4" /><path d="m19.8 19.8-1.4-1.4" /><path d="m18.4 5.6 1.4-1.4" /><path d="m4.2 19.8 1.4-1.4" /></svg>;
 }
 
 function Sidebar({ user, path, setPath, isOpen, onClose }) {
   const items = [
     ['Dashboard', '/dashboard', ['requestor', 'branch_head', 'sacd_head', 'department_head', 'dpo', 'ceo', 'archivist', 'admin'], 'dashboard'],
-    ['New Request', '/requests/new', ['requestor', 'branch_head', 'department_head'], 'request'],
-    ['My Requests', '/requests/my', ['requestor', 'branch_head', 'department_head'], 'request'],
     ['Approval Queue', '/approvals', ['branch_head', 'sacd_head', 'department_head', 'dpo', 'ceo', 'admin'], 'approval'],
     ['Archivist Queue', '/archivist', ['archivist', 'admin'], 'archive'],
     ['All Requests', '/requests/all', ['admin', 'ceo', 'dpo'], 'request'],
-    ['Incidents', '/incidents', ['archivist', 'admin', 'dpo', 'ceo'], 'archive'],
+    ['Incidents', '/incidents', ['archivist', 'admin', 'dpo', 'ceo'], 'alert'],
     ['Reports', '/reports', ['branch_head', 'sacd_head', 'department_head', 'dpo', 'ceo', 'archivist', 'admin'], 'reports'],
     ['Users', '/users', ['admin'], 'users'],
     ['Settings', '/settings', ['admin'], 'settings'],
     ['Audit Logs', '/audit-logs', ['admin'], 'audit'],
+    ['New Request', '/requests/new', ['requestor', 'branch_head', 'department_head'], 'request'],
+    ['My Requests', '/requests/my', ['requestor', 'branch_head', 'department_head'], 'request'],
   ];
   return (
     <>
@@ -695,6 +684,7 @@ function Sidebar({ user, path, setPath, isOpen, onClose }) {
 
 function Header({ user, users, setCurrentUserId, onLogout, onUpdateProfile, theme, setTheme, isMobileMenuOpen, onMenuToggle }) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [profileDraft, setProfileDraft] = useState({ name: user.name, email: user.email, password: user.password || '', gender: user.gender, avatar: user.avatarCustom ? user.avatar : '', avatarCustom: Boolean(user.avatarCustom) });
   const [profileErrors, setProfileErrors] = useState([]);
 
@@ -704,6 +694,13 @@ function Header({ user, users, setCurrentUserId, onLogout, onUpdateProfile, them
   }, [user]);
 
   const currentAvatar = profileDraft.avatar || getAvatarUrl(profileDraft.name, profileDraft.gender);
+  const notifications = [
+    {
+      id: 'n1',
+      title: 'Document retrieval update',
+      message: `${roles[user.role]} dashboard has request activity ready to review.`,
+    },
+  ];
 
   const uploadProfileImage = (event) => {
     const file = event.target.files?.[0];
@@ -734,20 +731,36 @@ function Header({ user, users, setCurrentUserId, onLogout, onUpdateProfile, them
           <span aria-hidden="true"></span>
           <span aria-hidden="true"></span>
         </button>
-        <div><h1>Document Retrieval Request System</h1><p>Secure request, approval, release, return, and audit monitoring.</p></div>
+        <div><h1>Welcome back, {user.name}!</h1><p>Here is what is happening with your document requests today.</p></div>
       </div>
       <div className="profile-tools">
         <button className="user-chip" type="button" onClick={() => setIsProfileOpen(true)} aria-label="Edit profile">
           <img className="avatar-image compact" src={user.avatar || getAvatarUrl(user.name, user.gender)} alt={user.name} />
           <div>
             <strong>{user.name}</strong>
-            <span>{roles[user.role]}</span>
+            <span>{roles[user.role]} / {user.department}</span>
           </div>
         </button>
-        <select value={user.id} onChange={(event) => setCurrentUserId(event.target.value)}>{users.map((item) => <option value={item.id} key={item.id}>{item.name} - {roles[item.role]}</option>)}</select>
-        <button type="button" className="theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+        <select className="role-switch" aria-label="Switch demo role" value={user.id} onChange={(event) => setCurrentUserId(event.target.value)}>{users.map((item) => <option value={item.id} key={item.id}>{item.name} - {roles[item.role]}</option>)}</select>
+        <div className="notification-wrap">
+          <button type="button" className="topbar-icon-button" aria-label="Notifications" aria-expanded={isNotificationsOpen} onClick={() => setIsNotificationsOpen((isOpen) => !isOpen)}>
+            <span className="notification-dot">{notifications.length}</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 21h4" /></svg>
+          </button>
+          {isNotificationsOpen && (
+            <div className="notification-panel" role="status">
+              <h3>Notifications</h3>
+              {notifications.map((notification) => (
+                <div className="notification-item" key={notification.id}>
+                  <strong>{notification.title}</strong>
+                  <span>{notification.message}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <button type="button" className="topbar-icon-button" aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
           <span className="theme-toggle-dot"><ThemeIcon theme={theme} /></span>
-          <span>{theme === 'dark' ? 'Dark' : 'Light'}</span>
         </button>
         <button className="ghost" onClick={onLogout}>Logout</button>
       </div>
@@ -784,10 +797,11 @@ function Login({ users, currentUserId, onLogin, onCreateAccount, onResetPassword
   const [errors, setErrors] = useState([]);
   const [notice, setNotice] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showAccountPassword, setShowAccountPassword] = useState(false);
   const [showResetPassword, setShowResetPassword] = useState(false);
   const selectedUser = users.find((user) => user.id === selected) || users[0];
   const [loginForm, setLoginForm] = useState({ email: selectedUser?.email || '', password: selectedUser?.password || '' });
-  const [accountForm, setAccountForm] = useState({ name: '', email: '', password: '', gender: 'male', branch: 'Head Office', department: 'Savings', position: 'Requestor' });
+  const [accountForm, setAccountForm] = useState({ name: '', email: '', password: '', gender: 'male', branch: 'Main Office', department: 'Savings', position: 'Requestor' });
   const [resetForm, setResetForm] = useState({ email: '', password: '' });
   useEffect(() => {
     setLoginForm({ email: selectedUser?.email || '', password: selectedUser?.password || '' });
@@ -848,7 +862,8 @@ function Login({ users, currentUserId, onLogin, onCreateAccount, onResetPassword
           <>
             <Field label="Full Name" value={accountForm.name} onChange={(value) => updateAccount('name', value)} />
             <Field label="Email" type="email" value={accountForm.email} onChange={(value) => updateAccount('email', value)} />
-            <Field label="Password" type="password" value={accountForm.password} onChange={(value) => updateAccount('password', value)} />
+            <label>Password</label>
+            <PasswordInput value={accountForm.password} onChange={(value) => updateAccount('password', value)} isVisible={showAccountPassword} onToggle={() => setShowAccountPassword((isVisible) => !isVisible)} />
             <Field label="Gender" type="select" value={accountForm.gender} options={['male', 'female']} onChange={(value) => updateAccount('gender', value)} />
             <Field label="Branch" type="select" value={accountForm.branch} options={branches} onChange={(value) => updateAccount('branch', value)} />
             <Field label="Department" type="select" value={accountForm.department} options={departments} onChange={(value) => updateAccount('department', value)} />
@@ -885,174 +900,216 @@ function PasswordInput({ value, onChange, isVisible, onToggle }) {
   );
 }
 
+function DashboardIcon({ name }) {
+  const commonProps = { viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': 'true' };
+  if (name === 'pending') return <svg {...commonProps}><circle className="icon-shape-a" cx="12" cy="12" r="9" /><path className="icon-cutout" d="M11 6h2v6.3l4.1 2.4-1 1.8-5.1-3z" /></svg>;
+  if (name === 'approved') return <svg {...commonProps}><circle className="icon-shape-a" cx="12" cy="12" r="9" /><path className="icon-cutout" d="m8 12.3 2.6 2.6L16.8 8l1.8 1.7-7.9 8.1-4.5-4.3z" /></svg>;
+  if (name === 'released') return <svg {...commonProps}><path className="icon-shape-a" d="M4 8h16v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3z" /><path className="icon-shape-b" d="M5 4h7l2 4H3z" /><path className="icon-cutout" d="M9 13h6v2H9z" /></svg>;
+  if (name === 'alert') return <svg {...commonProps}><path className="icon-shape-a" d="m12 3 10 18H2z" /><path className="icon-cutout" d="M11 9h2v5h-2zm0 7h2v2h-2z" /></svg>;
+  if (name === 'branch') return <svg {...commonProps}><path className="icon-shape-a" d="M10 3h4v18h-4z" /><circle className="icon-shape-b" cx="18" cy="9" r="4" /><circle className="icon-shape-c" cx="6" cy="16" r="4" /></svg>;
+  return <svg {...commonProps}><path className="icon-shape-a" d="M6 3h8l5 5v13H6z" /><path className="icon-shape-b" d="M14 3v5h5" /><path className="icon-cutout" d="M9 12h6v2H9zm0 4h5v2H9z" /></svg>;
+}
+
 function Dashboard({ currentUser, requests, processing, incidents, setPath }) {
-  const [selectedMetric, setSelectedMetric] = useState('Total Requests');
-  const [selectedTrendDate, setSelectedTrendDate] = useState(null);
-  const [requestSearch, setRequestSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
+  const [selectedTrendDate, setSelectedTrendDate] = useState('');
   const my = currentUser.role === 'admin' ? requests : requests.filter((request) => request.requestorId === currentUser.id || request.currentApprover === currentUser.id || request.assignedArchivistId === currentUser.id || ['ceo', 'dpo'].includes(currentUser.role));
-
-  const metricDefinitions = [
-    { label: 'Total Requests', filter: () => true },
-    { label: 'Pending Approval', filter: (request) => request.status === 'Pending Approval' },
-    { label: 'Approved Requests', filter: (request) => ['Approved', 'Forwarded to Archivist'].includes(request.status) },
-    { label: 'For Archivist Processing', filter: (request) => ['Forwarded to Archivist', 'Processing'].includes(request.status) },
-    { label: 'Released Documents', filter: (request) => request.status === 'Released' },
-    { label: 'Overdue Physical Documents', filter: (request) => request.computedStatus === 'Overdue' },
-    { label: 'Electronic Access Pending Revocation', filter: (request) => request.documentType === 'Electronic' && request.status === 'Released' && !processing[request.id]?.accessRevoked },
-    { label: 'Closed Requests', filter: (request) => request.status === 'Closed' },
-    { label: 'Incident Reports (Open)', filter: () => true },
-  ];
-
-  const metrics = metricDefinitions.map((metric) => ({
-    ...metric,
-    value: metric.label === 'Incident Reports (Open)' ? incidents.filter((incident) => incident.status === 'Open').length : my.filter(metric.filter).length,
-  }));
-
-  const activeMetric = metrics.find((metric) => metric.label === selectedMetric) || metrics[0];
   const openIncidents = incidents.filter((incident) => incident.status === 'Open');
-  const detailRequests = activeMetric.label === 'Incident Reports (Open)'
-    ? my.filter((request) => openIncidents.some((incident) => incident.requestId === request.id))
-    : my.filter(activeMetric.filter);
-  const trendDateRequests = selectedTrendDate ? my.filter((request) => request.requestDate === selectedTrendDate) : [];
-  const pendingCount = my.filter((request) => request.status === 'Pending Approval').length;
-  const approvedCount = my.filter((request) => ['Approved', 'Forwarded to Archivist', 'Processing', 'Released', 'Closed'].includes(request.status)).length;
-  const rejectedCount = my.filter((request) => request.status === 'Rejected').length;
-  const trendData = buildRequestTrend(my);
-  const trendMax = Math.max(1, ...trendData.map((point) => point.count));
-  const trendYLabels = Array.from({ length: 6 }, (_, index) => Math.round((trendMax / 5) * (5 - index)));
-  const chartLeft = 44;
-  const chartRight = 354;
-  const chartTop = 20;
-  const chartBottom = 132;
-  const chartWidth = chartRight - chartLeft;
-  const chartHeight = chartBottom - chartTop;
-  const trendPoints = trendData.map((point, index) => {
-    const x = chartLeft + (trendData.length === 1 ? 0 : (index / (trendData.length - 1)) * chartWidth);
-    const y = chartBottom - (point.count / trendMax) * chartHeight;
-    return { ...point, x, y };
-  });
-  const trendPath = trendPoints.map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ');
-  const trendFillPath = `${trendPath} L${chartRight} ${chartBottom} L${chartLeft} ${chartBottom} Z`;
-  const trendAxisLabels = [0, 7, 14, 21, 29].map((index) => trendData[index]).filter(Boolean);
-
+  const pendingRequests = my.filter((request) => request.status === 'Pending Approval');
+  const approvedRequests = my.filter((request) => ['Approved', 'Forwarded to Archivist'].includes(request.status));
+  const releasedRequests = my.filter((request) => request.status === 'Released');
+  const archivistRequests = my.filter((request) => ['Forwarded to Archivist', 'Processing'].includes(request.status));
+  const overdueRequests = my.filter((request) => request.computedStatus === 'Overdue');
+  const revocationRequests = my.filter((request) => request.documentType === 'Electronic' && request.status === 'Released' && !processing[request.id]?.accessRevoked);
+  const closedRequests = my.filter((request) => request.status === 'Closed');
+  const branchCounts = branches.map((branch) => ({ branch, count: my.filter((request) => request.branch === branch).length })).filter((item) => item.count > 0);
+  const overview = [
+    { label: 'Pending', count: pendingRequests.length, color: '#f59e0b' },
+    { label: 'Approved', count: approvedRequests.length, color: '#22c55e' },
+    { label: 'Released', count: releasedRequests.length, color: '#2563eb' },
+    { label: 'For Archivist', count: archivistRequests.length, color: '#7c3aed' },
+    { label: 'Others', count: Math.max(0, my.length - pendingRequests.length - approvedRequests.length - releasedRequests.length - archivistRequests.length), color: '#94a3b8' },
+  ];
+  const donutStops = overview.reduce((state, item) => {
+    const start = state.offset;
+    const width = my.length ? (item.count / my.length) * 100 : 0;
+    state.parts.push(`${item.color} ${start}% ${start + width}%`);
+    state.offset += width;
+    return state;
+  }, { offset: 0, parts: [] }).parts.join(', ');
+  const trendData = useMemo(() => {
+    const baseDate = new Date();
+    baseDate.setHours(12, 0, 0, 0);
+    return Array.from({ length: 30 }, (_, index) => {
+      const day = new Date(baseDate);
+      day.setDate(baseDate.getDate() - (29 - index));
+      const date = day.toISOString().slice(0, 10);
+      const dayRequests = my.filter((request) => request.requestDate === date);
+      return {
+        date,
+        label: day.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+        count: dayRequests.length,
+        requests: dayRequests,
+      };
+    });
+  }, [my]);
+  const maxTrendCount = Math.max(1, ...trendData.map((item) => item.count));
+  const trendPoints = trendData.map((item, index) => ({
+    ...item,
+    x: 24 + (index * 272) / Math.max(1, trendData.length - 1),
+    y: 84 - (item.count / maxTrendCount) * 56,
+  }));
+  const trendLine = trendPoints.map((item) => `${item.x},${item.y}`).join(' ');
+  const trendArea = trendPoints.length ? `M${trendPoints[0].x},88 ${trendPoints.map((item) => `L${item.x},${item.y}`).join(' ')} L${trendPoints[trendPoints.length - 1].x},88 Z` : '';
+  const selectedTrend = trendData.find((item) => item.date === selectedTrendDate);
   return (
     <section className="page dashboard-page">
-      <PageTitle title="Dashboard" subtitle={`Role view for ${roles[currentUser.role]}`} />
-      <div className="dashboard-reference">
-        <div className="dashboard-controls">
-          <label className="dashboard-search">
-            <svg className="dashboard-search-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="11" cy="11" r="7" />
-              <path d="m16 16 4 4" />
-            </svg>
-            <input value={requestSearch} onChange={(event) => setRequestSearch(event.target.value)} placeholder="Search by request ID or document name" />
-          </label>
-        </div>
-        <div className="dashboard-content-layout">
-          <aside className="dashboard-side-panel">
-            <article className="dashboard-total-card">
-              <div className="card-header">
-                <h3>Total Requests:</h3>
-                <button type="button" className="plus-button" onClick={() => setPath('/requests/new')}>+</button>
-              </div>
-              <div className="dashboard-total-grid">
-                <div>
-                  <span>Pending:</span>
-                  <strong>{pendingCount}</strong>
-                  <button type="button" onClick={() => setStatusFilter('Pending Approval')}>Pending:</button>
-                </div>
-                <div>
-                  <span>Approved:</span>
-                  <strong>{approvedCount}</strong>
-                  <div className="dashboard-pill-row">
-                    <button type="button" onClick={() => setStatusFilter('Approved')}>Approved:</button>
-                    <button type="button" className="rejected-pill" onClick={() => setStatusFilter('Rejected')}>Rejected: {rejectedCount}</button>
-                  </div>
-                </div>
-              </div>
-            </article>
-            <article className="dashboard-trend-card">
-              <div className="card-header">
-                <h3>Request Trends (Last 30 Days)</h3>
-                <span aria-hidden="true">v</span>
-              </div>
-              <svg viewBox="0 0 370 175" role="img" aria-label="Request trends line chart">
-                {trendYLabels.map((label, index) => (
-                  <g key={`${label}-${index}`}>
-                    <text className="trend-y-label" x="22" y={24 + index * 22}>{label}</text>
-                    <line x1="44" x2="354" y1={20 + index * 22} y2={20 + index * 22} />
-                  </g>
-                ))}
-                <path className="trend-fill" d={trendFillPath} />
-                <path className="trend-line" d={trendPath} />
-                {trendPoints.filter((point) => point.count > 0).map((point) => (
-                  <circle
-                    className={`trend-point ${selectedTrendDate === point.date ? 'selected' : ''}`}
-                    key={point.date}
-                    cx={point.x}
-                    cy={point.y}
-                    r="4"
-                    role="button"
-                    tabIndex="0"
-                    aria-label={`Show ${point.count} request${point.count === 1 ? '' : 's'} created on ${point.date}`}
-                    onClick={() => setSelectedTrendDate(point.date)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        setSelectedTrendDate(point.date);
-                      }
-                    }}
-                  >
-                    <title>{point.date}: {point.count} request{point.count === 1 ? '' : 's'}</title>
-                  </circle>
-                ))}
-                {trendAxisLabels.map((point) => (
-                  <text className="trend-x-label" key={point.date} x={point.x} y="164">{formatDateTick(point.date)}</text>
-                ))}
-              </svg>
-            </article>
-          </aside>
-          <div className="dashboard-main-metrics">
-            <div className="metric-grid">
-              {metrics.map(({ label, value }) => (
-                <button type="button" className={`metric ${selectedMetric === label && !selectedTrendDate ? 'active' : ''}`} key={label} onClick={() => { setSelectedMetric(label); setSelectedTrendDate(null); }}>
-                  <span>{label}</span>
-                  <strong>{value}</strong>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+      <div className="dashboard-stat-grid">
+        <button type="button" className="dashboard-stat-card total" onClick={() => setPath('/requests/all')}>
+          <span className="dashboard-stat-icon"><DashboardIcon name="file" /></span>
+          <span>Total Requests</span>
+          <strong>{my.length}</strong>
+          <small>All time requests</small>
+        </button>
+        <button type="button" className="dashboard-stat-card pending" onClick={() => setPath('/approvals')}>
+          <span className="dashboard-stat-icon"><DashboardIcon name="pending" /></span>
+          <span>Pending Approval</span>
+          <strong>{pendingRequests.length}</strong>
+          <small>For your approval</small>
+        </button>
+        <button type="button" className="dashboard-stat-card approved" onClick={() => setPath('/approvals')}>
+          <span className="dashboard-stat-icon"><DashboardIcon name="approved" /></span>
+          <span>Approved Requests</span>
+          <strong>{approvedRequests.length}</strong>
+          <small>Successfully approved</small>
+        </button>
+        <button type="button" className="dashboard-stat-card released" onClick={() => setPath('/archivist')}>
+          <span className="dashboard-stat-icon"><DashboardIcon name="released" /></span>
+          <span>Released Documents</span>
+          <strong>{releasedRequests.length}</strong>
+          <small>Released to requesters</small>
+        </button>
       </div>
-      <article className="info-card metric-detail-card">
-        <div className="card-header">
-          <h3>{selectedTrendDate ? `Graph Results for ${selectedTrendDate}` : activeMetric.label}</h3>
-          <span className="helper-text">{selectedTrendDate ? trendDateRequests.length : detailRequests.length} item{(selectedTrendDate ? trendDateRequests.length : detailRequests.length) === 1 ? '' : 's'}</span>
-        </div>
-        {selectedTrendDate ? (
-          <RequestTable requests={trendDateRequests} setPath={setPath} />
-        ) : activeMetric.label === 'Incident Reports (Open)' ? (
-          openIncidents.length ? (
-            <div className="stacked-list">
-              {openIncidents.map((incident) => {
-                const incidentRequest = requests.find((request) => request.id === incident.requestId);
+
+      <div className="dashboard-analysis-grid">
+        <div className="dashboard-column">
+          <article className="dashboard-panel">
+            <div className="card-header">
+              <h3>Total Requests Overview</h3>
+            </div>
+            <div className="overview-body">
+              <div className="overview-donut" style={{ background: `radial-gradient(circle, #fff 0 47%, transparent 48%), conic-gradient(${donutStops || '#e2e8f0 0% 100%'})` }}>
+                <strong>{my.length}</strong>
+                <span>Total</span>
+              </div>
+              <div className="overview-legend">
+                {overview.map((item) => (
+                  <button type="button" className="overview-row" key={item.label}>
+                    <span><i style={{ background: item.color }} />{item.label}</span>
+                    <strong>{item.count} ({my.length ? Math.round((item.count / my.length) * 100) : 0}%)</strong>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </article>
+
+          <article className="dashboard-panel dashboard-trend-card">
+            <div className="card-header">
+              <h3>Request Trends (Last 30 days)</h3>
+              <span className="helper-text">Click a point</span>
+            </div>
+            <svg viewBox="0 0 320 106" role="img" aria-label="Request trends for the last 30 days">
+              {[0, 1, 2].map((tick) => {
+                const y = 28 + tick * 28;
+                const value = Math.round(maxTrendCount - (tick * maxTrendCount) / 2);
                 return (
-                <button type="button" className="list-item result-item" key={incident.id} onClick={() => setPath(`/requests/${incident.requestId}`)}>
-                  <span>{incidentRequest?.requestNo || 'Request'} - {incident.incidentType}</span>
-                  <span className="helper-text">{incident.incidentDescription}</span>
-                </button>
+                  <g key={tick}>
+                    <line x1="24" y1={y} x2="296" y2={y} />
+                    <text className="trend-y-label" x="18" y={y + 3}>{value}</text>
+                  </g>
                 );
               })}
-            </div>
-          ) : (
-            <div className="empty-state">No open incident reports.</div>
-          )
-        ) : (
-          <RequestTable title={`${activeMetric.label} Results`} requests={detailRequests.slice(0, 10)} setPath={setPath} />
-        )}
-      </article>
-      <RequestTable title="Recent Requests" requests={my.slice(0, 5)} setPath={setPath} />
+              <path className="trend-fill" d={trendArea} />
+              <polyline className="trend-line" points={trendLine} />
+              {trendPoints.map((item, index) => (
+                <circle
+                  className={`trend-point ${selectedTrendDate === item.date ? 'selected' : ''}`}
+                  key={item.date}
+                  cx={item.x}
+                  cy={item.y}
+                  r="4"
+                  tabIndex="0"
+                  role="button"
+                  aria-label={`${item.label}: ${item.count} requests`}
+                  onClick={() => setSelectedTrendDate(item.date)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setSelectedTrendDate(item.date);
+                    }
+                  }}
+                />
+              ))}
+              {[0, 14, 29].map((index) => trendPoints[index] && <text className="trend-x-label" key={trendPoints[index].date} x={trendPoints[index].x} y="102">{trendPoints[index].label}</text>)}
+            </svg>
+            {selectedTrend && (
+              <div className="trend-result">
+                <div>
+                  <strong>{selectedTrend.count}</strong>
+                  <span>{selectedTrend.label}</span>
+                </div>
+                {selectedTrend.requests.length ? (
+                  <button type="button" onClick={() => setPath('/requests/all')}>
+                    {selectedTrend.requests.slice(0, 2).map((request) => request.requestNo).join(', ')}
+                    {selectedTrend.requests.length > 2 ? ` +${selectedTrend.requests.length - 2} more` : ''}
+                  </button>
+                ) : (
+                  <span>No requests on this date</span>
+                )}
+              </div>
+            )}
+          </article>
+
+        </div>
+
+        <div className="dashboard-column">
+          <div className="dashboard-right-stack">
+            <article className="dashboard-panel branch-coverage-card">
+              <div className="card-header">
+                <h3>Branch Coverage</h3>
+                <span className="helper-text">{branches.length} places</span>
+              </div>
+              <div className="branch-list">
+                {(branchCounts.length ? branchCounts : branches.slice(0, 5).map((branch) => ({ branch, count: 0 }))).map((item) => (
+                  <button type="button" key={item.branch} onClick={() => setPath('/reports')}>
+                    <span><DashboardIcon name="branch" />{item.branch}</span>
+                    <strong>{item.count}</strong>
+                  </button>
+                ))}
+              </div>
+            </article>
+
+            <article className="dashboard-panel document-status-card">
+              <h3>Document Status</h3>
+              <button type="button" onClick={() => setPath('/archivist')}><span className="status-dot"><DashboardIcon name="file" /></span><span>For Archivist Processing</span><strong>{archivistRequests.length}</strong></button>
+              <button type="button" onClick={() => setPath('/requests/all')}><span className="status-dot rejected"><DashboardIcon name="alert" /></span><span>Overdue Physical Documents</span><strong>{overdueRequests.length}</strong></button>
+              <button type="button" onClick={() => setPath('/requests/all')}><span className="status-dot pending"><DashboardIcon name="pending" /></span><span>Electronic Access Pending Revocation</span><strong>{revocationRequests.length}</strong></button>
+              <button type="button" onClick={() => setPath('/requests/all')}><span className="status-dot approved"><DashboardIcon name="approved" /></span><span>Closed Requests</span><strong>{closedRequests.length}</strong></button>
+              <button type="button" onClick={() => setPath('/incidents')}><span className="status-dot rejected"><DashboardIcon name="alert" /></span><span>Incident Reports (Open)</span><strong>{openIncidents.length}</strong></button>
+            </article>
+
+            <article className="dashboard-panel quick-actions-card">
+              <h3>Quick Actions</h3>
+              <div>
+                <button type="button" onClick={() => setPath('/requests/new')}><span className="quick-action-mark mark-file"><i /></span><span>New Request</span></button>
+                <button type="button" onClick={() => setPath('/approvals')}><span className="quick-action-mark mark-approval"><i /></span><span>Approval Queue</span></button>
+                <button type="button" onClick={() => setPath('/requests/all')}><span className="quick-action-mark mark-all"><i /></span><span>All Requests</span></button>
+                <button type="button" onClick={() => setPath('/reports')}><span className="quick-action-mark mark-reports"><i /></span><span>Reports</span></button>
+              </div>
+            </article>
+          </div>
+
+        </div>
+      </div>
     </section>
   );
 }
@@ -1132,7 +1189,14 @@ function humanize(value) {
 }
 
 function ApprovalQueue({ currentUser, requests, updateRequestStatus, users, setPath }) {
-  const queue = currentUser.role === 'admin' ? requests.filter((request) => request.status === 'Pending Approval') : requests.filter((request) => request.currentApprover === currentUser.id && request.status === 'Pending Approval');
+  const isSharedPrivacyApprover = ['dpo', 'ceo'].includes(currentUser.role);
+  const queue = currentUser.role === 'admin'
+    ? requests.filter((request) => request.status === 'Pending Approval')
+    : requests.filter((request) => {
+      if (request.status !== 'Pending Approval') return false;
+      if (request.currentApprover === currentUser.id) return true;
+      return isSharedPrivacyApprover && ['Confidential', 'Highly Sensitive'].includes(request.confidentialityLevel);
+    });
   const [remarks, setRemarks] = useState('');
   const [errors, setErrors] = useState([]);
   const archivist = users.find((user) => user.role === 'archivist');
@@ -1146,7 +1210,7 @@ function ApprovalQueue({ currentUser, requests, updateRequestStatus, users, setP
     return true;
   };
   const approve = (request) => {
-    if (currentUser.role === 'branch_head' && request.branch !== 'Head Office') {
+    if (currentUser.role === 'branch_head' && request.branch !== 'Main Office') {
       updateRequestStatus(request.id, 'Pending Approval', 'Branch Head endorsed to SACD Head', remarks || 'Endorsed for SACD Head approval', { currentApprover: sacdHead?.id || '', branchHeadRequestedBy: currentUser.id, branchHeadRequestedAt: new Date().toLocaleString() });
       setRemarks('');
       return;
@@ -1164,7 +1228,7 @@ function ApprovalQueue({ currentUser, requests, updateRequestStatus, users, setP
     updateRequestStatus(request.id, 'Needs Clarification', 'Requested clarification', remarks, { clarificationRemarks: remarks });
     setRemarks('');
   };
-  return <section className="page"><PageTitle title="Approval Queue" subtitle="Confidential files require Data Privacy Officer approval before release." />{errors.length > 0 && <AlertList items={errors} />}<textarea className="remarks-box" placeholder="Remarks required for rejection or clarification" value={remarks} onChange={(e) => setRemarks(e.target.value)} /><div className="queue-list">{queue.map((request) => <article className="queue-card" key={request.id} onClick={() => setPath(`/requests/${request.id}`)}><div><h3>{request.documentTitle}</h3><p>{request.requestNo} by {request.requestorName}</p><p>Reminder: bring back or revoke access by {request.borrowReturnDueDate || 'the approved due date'}.</p><span className={statusClass(request.status)}>{request.status}</span></div><div className="actions" onClick={(event) => event.stopPropagation()}><button onClick={() => approve(request)}>{currentUser.role === 'branch_head' && request.branch !== 'Head Office' ? 'Endorse to SACD' : 'Approve'}</button><button className="danger" onClick={() => reject(request)}>Reject</button><button className="secondary" onClick={() => clarify(request)}>Clarify</button></div></article>)}{!queue.length && <Empty message="No approval items." />}</div></section>;
+  return <section className="page"><PageTitle title="Approval Queue" subtitle="Confidential files require Data Privacy Officer approval before release." />{errors.length > 0 && <AlertList items={errors} />}<textarea className="remarks-box" placeholder="Remarks required for rejection or clarification" value={remarks} onChange={(e) => setRemarks(e.target.value)} /><div className="queue-list">{queue.map((request) => <article className="queue-card" key={request.id} onClick={() => setPath(`/requests/${request.id}`)}><div><h3>{request.documentTitle}</h3><p>{request.requestNo} by {request.requestorName}</p><p>Reminder: bring back or revoke access by {request.borrowReturnDueDate || 'the approved due date'}.</p><span className={statusClass(request.status)}>{request.status}</span></div><div className="actions" onClick={(event) => event.stopPropagation()}><button onClick={() => approve(request)}>{currentUser.role === 'branch_head' && request.branch !== 'Main Office' ? 'Endorse to SACD' : 'Approve'}</button><button className="danger" onClick={() => reject(request)}>Reject</button><button className="secondary" onClick={() => clarify(request)}>Clarify</button></div></article>)}{!queue.length && <Empty message="No approval items." />}</div></section>;
 }
 function ArchivistQueue({ requests, setPath }) {
   const queue = requests.filter((request) => ['Approved', 'Forwarded to Archivist', 'Processing'].includes(request.status));
@@ -1352,7 +1416,7 @@ function Users({ users, setUsers, currentUserId }) {
   };
 
   return (
-    <section className="page">
+    <section className="page users-page">
       <PageTitle title="User Management" subtitle="Admin view of users, roles, branches, departments, and active status." />
       <div className="table-card">
         <table>
@@ -1360,7 +1424,6 @@ function Users({ users, setUsers, currentUserId }) {
             <tr>
               <th>Name</th>
               <th>Email</th>
-              <th>Gender</th>
               <th>Role</th>
               <th>Branch</th>
               <th>Department</th>
@@ -1382,7 +1445,6 @@ function Users({ users, setUsers, currentUserId }) {
                     </div>
                   </td>
                   <td>{isEditing ? <input value={draft.email || ''} onChange={(event) => setDraft((current) => ({ ...current, email: event.target.value }))} /> : user.email}</td>
-                  <td>{isEditing ? <select value={draft.gender || 'male'} onChange={(event) => setDraft((current) => ({ ...current, gender: event.target.value }))}><option value="female">Girl</option><option value="male">Boy</option></select> : user.gender === 'female' ? 'Girl' : 'Boy'}</td>
                   <td>{isEditing ? <select value={draft.role || ''} onChange={(event) => setDraft((current) => ({ ...current, role: event.target.value }))}>{Object.entries(roles).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select> : roles[user.role]}</td>
                   <td>{isEditing ? <input value={draft.branch || ''} onChange={(event) => setDraft((current) => ({ ...current, branch: event.target.value }))} /> : user.branch}</td>
                   <td>{isEditing ? <input value={draft.department || ''} onChange={(event) => setDraft((current) => ({ ...current, department: event.target.value }))} /> : user.department}</td>
@@ -1438,7 +1500,7 @@ const policyReferenceSections = [
     title: 'Request and Retrieval Procedure',
     items: [
       'Submission: The requestor submits an online Document Retrieval Request containing the document title, purpose of retrieval, date needed, and format type, either physical or electronic.',
-      'Review and Approval: The request is routed to designated approvers depending on the user role, including Branch Heads for branch staff, Department Heads for head office staff, and the Data Privacy Officer or CEO for confidential records.',
+      'Review and Approval: The request is routed to designated approvers depending on the user role, including Branch Heads for branch staff, Department Heads for main office staff, and the Data Privacy Officer or CEO for confidential records.',
       'Processing: Once approved, the assigned Branch Archivist retrieves and releases the files.',
     ],
   },
@@ -1513,7 +1575,7 @@ const systemProcessSteps = [
     title: 'Route Approval',
     owner: 'Approving Authority',
     status: 'Approved / Needs Clarification / Rejected',
-    description: 'Staff requests route to Branch Heads, Branch Head requests to SACD, Head Office requests to Department Heads, and sensitive records to the DPO or CEO.',
+    description: 'Staff requests route to Branch Heads, Branch Head requests to SACD, Main Office requests to Department Heads, and sensitive records to the DPO or CEO.',
   },
   {
     step: '4',
@@ -1547,7 +1609,11 @@ const systemProcessSteps = [
 
 function Settings({ theme, setTheme }) {
   const storedSettings = useMemo(() => loadStoredValue(settingsStorageKey, {}), []);
-  const [branchesList, setBranchesList] = useState(() => storedSettings.branches || branches);
+  const [branchesList, setBranchesList] = useState(() => {
+    const storedBranches = Array.isArray(storedSettings.branches) ? storedSettings.branches.map(normalizeBranchName) : [];
+    const mergedBranches = [...branches, ...storedBranches].filter((branch, index, list) => list.indexOf(branch) === index);
+    return mergedBranches;
+  });
   const [departmentsList, setDepartmentsList] = useState(() => storedSettings.departments || departments);
   const [categoriesList, setCategoriesList] = useState(() => storedSettings.categories || ['Member Records', 'Finance Records', 'HR Records', 'Board Records']);
   const [editingItem, setEditingItem] = useState(null);
