@@ -43,7 +43,8 @@ create table if not exists public.profiles (
       'dpo',
       'ceo',
       'archivist',
-      'admin'
+      'admin',
+      'superadmin'
     )
   ),
   is_active boolean not null default true,
@@ -297,7 +298,7 @@ security definer
 set search_path = public
 stable
 as $$
-  select coalesce(public.get_my_role() = 'admin', false)
+  select coalesce(public.get_my_role() in ('admin', 'superadmin'), false)
 $$;
 
 create or replace function public.is_archivist()

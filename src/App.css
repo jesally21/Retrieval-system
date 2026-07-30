@@ -1305,7 +1305,7 @@ tbody tr {
 
 .badge[data-variant="warning"] {
   background: #fef3c7;
-  color: var(--warning);
+  color: #7f1d1d;
 }
 
 .badge[data-variant="success"] {
@@ -1327,7 +1327,7 @@ tbody tr {
 .status-needs-clarification,
 .status-for-closure {
   background: #fef3c7;
-  color: var(--warning);
+  color: #7f1d1d;
   font-family: 'Inter', 'Segoe UI', 'Roboto', Arial, sans-serif;
 }
 
@@ -1391,22 +1391,22 @@ tbody tr {
 
 .field.date-warning input,
 .due-date-cell.warning {
-  border-color: #f59e0b;
+  border-color: #991b1b;
   background: #fff3d6;
-  color: #92400e;
+  color: #7f1d1d;
   font-weight: 900;
 }
 
 .due-warning {
-  border-color: rgba(245, 158, 11, .45);
+  border-color: rgba(153, 27, 27, .45);
   background: #fff7ed;
-  color: #92400e;
+  color: #7f1d1d;
   font-weight: 900;
 }
 
 .warning-mark {
   margin-left: 4px;
-  color: #f59e0b;
+  color: #7f1d1d;
   font-weight: 900;
 }
 
@@ -1449,13 +1449,13 @@ body.dark .dashboard-search input {
 body.dark .field.date-warning input,
 body.dark .due-date-cell.warning,
 body.dark .due-warning {
-  background: rgba(245, 158, 11, 0.12);
-  color: #ffd08a;
-  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(127, 29, 29, 0.14);
+  color: #7f1d1d;
+  border-color: rgba(127, 29, 29, 0.45);
 }
 
 body.dark .warning-mark {
-  color: #ffd08a;
+  color: #7f1d1d;
 }
 
 textarea {
@@ -1524,6 +1524,27 @@ textarea {
   grid-template-columns: 170px 1fr;
   gap: 12px;
   margin: 10px 0;
+}
+
+.info-card p strong {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.compact-link {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.compact-link:hover {
+  text-decoration: underline;
 }
 
 .policy-card {
@@ -1688,7 +1709,7 @@ textarea {
 
 .queue-card {
   justify-content: space-between;
-  padding: 16px;
+  padding: 12px 14px;
   border-left: 5px solid #b98543;
   background: #e8d3b5;
   color: #120b05;
@@ -1699,13 +1720,14 @@ textarea {
 
 .queue-card h3,
 .queue-card p {
-  margin: 0 0 6px;
+  margin: 0 0 4px;
   color: #050505;
   font-weight: 900;
   letter-spacing: 0;
 }
 
 .queue-card p {
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -1969,7 +1991,7 @@ body.dark .login-panel {
 
 .queue-card h3 {
   color: #050505;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 900;
   letter-spacing: 0;
 }
@@ -1977,12 +1999,20 @@ body.dark .login-panel {
 .queue-card p,
 .queue-card span {
   color: #111;
+  font-size: 12px;
   font-weight: 800;
 }
 
 .queue-card .badge {
   color: #057a3a;
   font-weight: 900;
+}
+
+.queue-card button {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 12px;
+  border-radius: 8px;
 }
 
 .dashboard-page,
@@ -3101,6 +3131,11 @@ body.dark .dashboard-trend-card text {
   .info-card p span {
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+
+  .compact-link {
+    max-width: 100%;
+    white-space: nowrap;
   }
 
   .actions,

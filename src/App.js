@@ -8,8 +8,11 @@ const roles = {
   dpo: 'Admin - DPO',
   ceo: 'Admin - CEO',
   archivist: 'Archivist - Process Approved Docs',
-  admin: 'Super Admin - ICT',
+  admin: 'Admin - ICT',
+  superadmin: 'Super Admin - ICT',
 };
+
+const adminRoles = ['admin', 'superadmin'];
 
 const branches = ['Main Office', 'Culasi', 'Sibalom', 'San Jose', 'Balasan', 'Barotac Viejo', 'Molo', 'Janiuay', 'Caticlan', 'Kalibo', 'San Remigio'];
 const departments = ['ICT Department', 'HRAD', 'Accounting', 'Audit', 'SACD', 'Lending', 'Savings', 'Broadband Division', 'Records / Archive'];
@@ -40,13 +43,13 @@ export function getAvatarUrl(name, gender) {
 }
 
 const initialUsers = [
-  { id: 'u1', name: 'Mara Dela Cruz', email: 'mara@bmpc.local', gender: 'female', role: 'requestor', branch: 'Culasi', department: 'Savings', position: 'Member Services Associate', avatar: getAvatarUrl('Mara Dela Cruz', 'female') },
-  { id: 'u2', name: 'Ramon Salazar', email: 'ramon@bmpc.local', gender: 'male', role: 'branch_head', branch: 'Culasi', department: 'Branch Operations', position: 'Branch Head', avatar: getAvatarUrl('Ramon Salazar', 'male') },
-  { id: 'u4', name: 'Ana Villanueva', email: 'ana@bmpc.local', gender: 'female', role: 'department_head', branch: 'Main Office', department: 'ICT Department', position: 'Head Approver', avatar: getAvatarUrl('Ana Villanueva', 'female') },
-  { id: 'u5', name: 'Joel Santos', email: 'joel@bmpc.local', gender: 'male', role: 'dpo', branch: 'Main Office', department: 'Compliance', position: 'Data Privacy Officer', avatar: getAvatarUrl('Joel Santos', 'male') },
-  { id: 'u6', name: 'Leonil M. Alabado', email: 'leonil@bmpc.local', gender: 'male', role: 'ceo', branch: 'Main Office', department: 'Executive', position: 'CEO', avatar: getAvatarUrl('Leonil M. Alabado', 'male') },
-  { id: 'u7', name: 'Nico Flores', email: 'nico@bmpc.local', gender: 'male', role: 'archivist', branch: 'Main Office', department: 'Records / Archive', position: 'Archivist', avatar: getAvatarUrl('Nico Flores', 'male') },
-  { id: 'u8', name: 'Ivy Mendoza', email: 'ivy@bmpc.local', gender: 'female', role: 'admin', branch: 'Main Office', department: 'ICT Department', position: 'System Admin', avatar: getAvatarUrl('Ivy Mendoza', 'female') },
+  { id: 'u1', name: 'NAIH MAERCHESSA', email: 'naih@gmail.com', password: '@naih123', gender: 'female', role: 'requestor', branch: 'Culasi', department: 'Savings', position: 'Staff', avatar: getAvatarUrl('NAIH MAERCHESSA', 'female') },
+  { id: 'u2', name: 'LEIGH ENRILE', email: 'leigh@gmail.com', password: '@leigh123', gender: 'male', role: 'branch_head', branch: 'Culasi', department: 'Branch Operations', position: 'Manager', avatar: getAvatarUrl('LEIGH ENRILE', 'male') },
+  { id: 'u4', name: 'MAXWON MOON', email: 'maxwon@gmail.com', password: '@maxwon132', gender: 'male', role: 'department_head', branch: 'Main Office', department: 'ICT Department', position: 'Head', avatar: getAvatarUrl('MAXWON MOON', 'male') },
+  { id: 'u5', name: 'DEIB ENRILE', email: 'deib@gmail.com', password: '@deib123', gender: 'male', role: 'dpo', branch: 'Main Office', department: 'Compliance', position: 'Data Privacy Officer', avatar: getAvatarUrl('DEIB ENRILE', 'male') },
+  { id: 'u6', name: 'MAXPEIN MOON', email: 'maxspein@gmail.com', password: '@maxspein123', gender: 'male', role: 'ceo', branch: 'Main Office', department: 'Executive', position: 'CEO', avatar: getAvatarUrl('MAXPEIN MOON', 'male') },
+  { id: 'u7', name: 'LEE GOZON', email: 'lee@gmail.com', password: '@lee123', gender: 'male', role: 'archivist', branch: 'Main Office', department: 'Records / Archive', position: 'Archivist', avatar: getAvatarUrl('LEE GOZON', 'male') },
+  { id: 'u9', name: 'RANDAL ECHAVEZ', email: 'randal@gmail.com', password: '@randal123', gender: 'male', role: 'superadmin', branch: 'Main Office', department: 'ICT Department', position: 'Super Admin', avatar: getAvatarUrl('RANDAL ECHAVEZ', 'male') },
 ];
 
 const usersStorageKey = 'bmpc-document-retrieval-users';
@@ -77,17 +80,23 @@ function saveStoredValue(key, value) {
 }
 
 function getDefaultUsers() {
-  return initialUsers.map((user) => ({ ...user, password: 'demo-password' }));
+  return initialUsers.map((user) => ({ ...user }));
 }
 
 function loadStoredUsers() {
   const fallbackUsers = getDefaultUsers();
-  const storedUsers = loadStoredValue(usersStorageKey, []).filter((user) => user.id !== 'u3' && user.name !== 'Lina Reyes' && user.role !== 'sacd_head');
+  const storedUsers = loadStoredValue(usersStorageKey, []).filter((user) => user.id !== 'u3' && user.name !== 'Lina Reyes' && user.role !== 'sacd_head' && user.id !== 'u8' && user.name !== 'MAXSPAUN ENRILE' && user.email !== 'maxspaun@gmail.com');
   if (!Array.isArray(storedUsers) || storedUsers.length === 0) return fallbackUsers;
   const storedById = new Map(storedUsers.map((user) => [user.id, user]));
   const mergedUsers = fallbackUsers.map((user) => {
     const storedUser = storedById.get(user.id);
-    return { ...user, ...storedUser, branch: normalizeBranchName(storedUser?.branch || user.branch) };
+    return {
+      ...storedUser,
+      ...user,
+      branch: normalizeBranchName(user.branch || storedUser?.branch),
+      department: user.department || storedUser?.department,
+      position: user.position || storedUser?.position,
+    };
   });
   const newUsers = storedUsers
     .filter((user) => !fallbackUsers.some((fallbackUser) => fallbackUser.id === user.id))
@@ -239,8 +248,8 @@ function determineApprover(profile, request, users) {
   if (request.confidentialityLevel === 'Confidential') return users.find((user) => user.role === 'dpo')?.id || users.find((user) => user.role === 'ceo')?.id || '';
   if (profile.role === 'requestor') return users.find((user) => user.role === 'branch_head' && user.branch === requestBranch)?.id || users.find((user) => user.role === 'branch_head')?.id || '';
   if (profile.role === 'branch_head') return users.find((user) => user.role === 'department_head')?.id || '';
-  if (['department_head', 'dpo', 'ceo'].includes(profile.role)) return users.find((user) => user.role === 'admin')?.id || '';
-  return users.find((user) => user.role === 'admin')?.id || '';
+  if (['department_head', 'dpo', 'ceo'].includes(profile.role)) return users.find((user) => adminRoles.includes(user.role))?.id || '';
+  return users.find((user) => adminRoles.includes(user.role))?.id || '';
 }
 
 function hasOpenIncident(request, incidents = []) {
@@ -293,23 +302,23 @@ function getStatusBadgeVariant(status) {
 function isPathAllowed(path, role) {
   const rules = [
     { test: /^\/dashboard$/, roles: Object.keys(roles) },
-    { test: /^\/requests\/new$/, roles: ['requestor', 'branch_head', 'department_head', 'admin'] },
+    { test: /^\/requests\/new$/, roles: ['requestor', 'branch_head', 'department_head', 'admin', 'superadmin'] },
     { test: /^\/requests\/my$/, roles: ['requestor', 'branch_head', 'department_head'] },
-    { test: /^\/requests\/all$/, roles: ['admin', 'ceo', 'dpo'] },
+    { test: /^\/requests\/all$/, roles: ['admin', 'superadmin', 'ceo', 'dpo'] },
     { test: /^\/requests\/[^/]+(\/closure)?$/, roles: Object.keys(roles) },
-    { test: /^\/approvals$/, roles: ['branch_head', 'department_head', 'dpo', 'ceo', 'admin'] },
-    { test: /^\/archivist(\/[^/]+\/process)?$/, roles: ['archivist', 'admin'] },
-    { test: /^\/incidents(\/new)?$/, roles: ['archivist', 'admin', 'dpo', 'ceo'] },
-    { test: /^\/reports$/, roles: ['branch_head', 'department_head', 'dpo', 'ceo', 'archivist', 'admin'] },
-    { test: /^\/users$/, roles: ['admin'] },
-    { test: /^\/settings$/, roles: ['admin'] },
-    { test: /^\/audit-logs$/, roles: ['admin'] },
+    { test: /^\/approvals$/, roles: ['branch_head', 'department_head', 'dpo', 'ceo', 'admin', 'superadmin'] },
+    { test: /^\/archivist(\/[^/]+\/process)?$/, roles: ['archivist', 'admin', 'superadmin'] },
+    { test: /^\/incidents(\/new)?$/, roles: ['archivist', 'admin', 'superadmin', 'dpo', 'ceo'] },
+    { test: /^\/reports$/, roles: ['branch_head', 'department_head', 'dpo', 'ceo', 'archivist', 'admin', 'superadmin'] },
+    { test: /^\/users$/, roles: ['admin', 'superadmin'] },
+    { test: /^\/settings$/, roles: ['admin', 'superadmin'] },
+    { test: /^\/audit-logs$/, roles: ['admin', 'superadmin'] },
   ];
   return rules.some((rule) => rule.test.test(path) && rule.roles.includes(role));
 }
 
 function canViewReleaseReferences(user, request) {
-  return request.requestorId === user.id || request.assignedArchivistId === user.id || ['admin', 'dpo', 'ceo'].includes(user.role);
+  return request.requestorId === user.id || request.assignedArchivistId === user.id || adminRoles.includes(user.role) || ['dpo', 'ceo'].includes(user.role);
 }
 
 function validateRequestForm(form) {
@@ -330,7 +339,7 @@ function validateRequestForm(form) {
 
 function App() {
   const [users, setUsers] = useState(loadStoredUsers);
-  const [currentUserId, setCurrentUserId] = useState('u8');
+  const [currentUserId, setCurrentUserId] = useState('u9');
   const [path, setPathState] = useState('/dashboard');
   const [theme, setTheme] = useState('dark');
   const [editingRequestId, setEditingRequestId] = useState(null);
@@ -349,8 +358,8 @@ function App() {
       archivistId: 'u7',
     },
     r4: {
-      electronicReleaseMethod: 'Shared Link',
-      electronicReleaseReference: 'Encrypted SharePoint link EXP-20260712',
+      electronicReleaseMethod: 'Link',
+      electronicReleaseReference: 'https://cnorkbyngylonroqmkef.supabase.co/storage/v1/object/public/releases/EXP-20260712',
       accessExpiryDate: '2026-07-12',
       deletionConfirmationRequired: true,
       accessRevoked: false,
@@ -661,12 +670,12 @@ function Sidebar({ user, users, setCurrentUserId, path, setPath, isOpen, onClose
     ['Dashboard', '/dashboard', ['requestor', 'branch_head', 'department_head', 'dpo', 'ceo', 'archivist', 'admin'], 'dashboard'],
     ['Approval Queue', '/approvals', ['branch_head', 'department_head', 'dpo', 'ceo', 'admin'], 'approval'],
     ['Archivist Queue', '/archivist', ['archivist', 'admin'], 'archive'],
-    ['All Requests', '/requests/all', ['admin', 'ceo', 'dpo'], 'request'],
+    ['All Requests', '/requests/all', ['admin', 'superadmin', 'ceo', 'dpo'], 'request'],
     ['Incidents', '/incidents', ['archivist', 'admin', 'dpo', 'ceo'], 'alert'],
     ['Reports', '/reports', ['branch_head', 'department_head', 'dpo', 'ceo', 'archivist', 'admin'], 'reports'],
-    ['Users', '/users', ['admin'], 'users'],
-    ['Settings', '/settings', ['admin'], 'settings'],
-    ['Audit Logs', '/audit-logs', ['admin'], 'audit'],
+    ['Users', '/users', ['admin', 'superadmin'], 'users'],
+    ['Settings', '/settings', ['admin', 'superadmin'], 'settings'],
+    ['Audit Logs', '/audit-logs', ['admin', 'superadmin'], 'audit'],
     ['New Request', '/requests/new', ['requestor', 'branch_head', 'department_head'], 'request'],
     ['My Requests', '/requests/my', ['requestor', 'branch_head', 'department_head'], 'request'],
   ];
@@ -726,6 +735,7 @@ function Header({ user, users, setCurrentUserId, onLogout, onUpdateProfile, them
     const reader = new FileReader();
     reader.onload = () => {
       setProfileDraft((draft) => ({ ...draft, avatar: reader.result, avatarCustom: true }));
+      onUpdateProfile({ ...profileDraft, avatar: reader.result, avatarCustom: true });
       setProfileErrors([]);
     };
     reader.readAsDataURL(file);
@@ -871,7 +881,7 @@ function DashboardIcon({ name }) {
 
 function Dashboard({ currentUser, requests, processing, incidents, setPath }) {
   const [selectedTrendDate, setSelectedTrendDate] = useState('');
-  const my = currentUser.role === 'admin' ? requests : requests.filter((request) => request.requestorId === currentUser.id || request.currentApprover === currentUser.id || request.assignedArchivistId === currentUser.id || ['ceo', 'dpo'].includes(currentUser.role));
+  const my = adminRoles.includes(currentUser.role) ? requests : requests.filter((request) => request.requestorId === currentUser.id || request.currentApprover === currentUser.id || request.assignedArchivistId === currentUser.id || ['ceo', 'dpo'].includes(currentUser.role));
   const pendingRequests = my.filter((request) => request.status === 'Pending Approval');
   const approvedRequests = my.filter((request) => ['Approved', 'Forwarded to Archivist'].includes(request.status));
   const releasedRequests = my.filter((request) => request.status === 'Released');
@@ -1107,12 +1117,11 @@ function NewRequest({ currentUser, requests, submitRequest, saveDraftRequest, ed
         subtitle={editingRequestId ? 'Update the draft or approved request, then resend it to the assigned approver.' : 'Create a request, save it as a draft, or submit it for automatic routing to the correct approver.'}
       />
       {errors.length > 0 && <AlertList items={errors} />}
-      <div className="alert">Request flow: Staff requests go to their Manager, Manager requests go to a Head, and confidential documents go to Admin DPO or CEO. Approved requests go to the Archivist for processing.</div>
       {hasReturnDateWarning && <div className="alert due-warning">Warning: the return due date is outside the allowed date range.</div>}
       <div className="form-grid">
         <Field label="Request Date" type="date" value={today()} readOnly />
         <Field label="Requestor" value={currentUser.name} readOnly />
-        <Field label="Department" value={form.department} onChange={(v) => update('department', v)} readOnly={currentUser.role !== 'admin'} />
+        <Field label="Department" value={form.department} onChange={(v) => update('department', v)} readOnly={!adminRoles.includes(currentUser.role)} />
         <Field label="Branch" value={currentUser.branch} readOnly />
         <Field label="Position" value={currentUser.position} readOnly />
         <Field label="Document Title / File Name" value={form.documentTitle} onChange={(v) => update('documentTitle', v)} />
@@ -1137,8 +1146,8 @@ function NewRequest({ currentUser, requests, submitRequest, saveDraftRequest, ed
 function AlertList({ items }) {
   return <div className="alert error-list">{items.map((item) => <div key={item}>{item}</div>)}</div>;
 }
-function Field({ label, value, onChange, type = 'text', options = [], readOnly = false, className = '', min, warning = false }) {
-  return <label className={`field ${className}`}><span>{label}{warning && <strong className="warning-mark" aria-hidden="true"> !</strong>}</span>{type === 'textarea' ? <textarea value={value} readOnly={readOnly} onChange={(e) => onChange?.(e.target.value)} /> : type === 'select' ? <select value={value} disabled={readOnly} onChange={(e) => onChange?.(e.target.value)}>{options.map((option) => <option key={option}>{option}</option>)}</select> : <input type={type} value={value} min={min} readOnly={readOnly} onChange={(e) => onChange?.(e.target.value)} />}</label>;
+function Field({ label, value, onChange, type = 'text', options = [], readOnly = false, className = '', min, warning = false, placeholder = '' }) {
+  return <label className={`field ${className}`}><span>{label}{warning && <strong className="warning-mark" aria-hidden="true"> !</strong>}</span>{type === 'textarea' ? <textarea value={value} placeholder={placeholder} readOnly={readOnly} onChange={(e) => onChange?.(e.target.value)} /> : type === 'select' ? <select value={value} disabled={readOnly} onChange={(e) => onChange?.(e.target.value)}>{options.map((option) => <option key={option}>{option}</option>)}</select> : <input type={type} value={value} min={min} placeholder={placeholder} readOnly={readOnly} onChange={(e) => onChange?.(e.target.value)} />}</label>;
 }
 
 function RequestList({ title, requests, setPath, allowManage = false, onEditRequest, onWithdrawRequest, onDeleteRequest }) {
@@ -1165,9 +1174,9 @@ function RequestDetails({ request, users, processing, closures, incidents, audit
     if (key === 'electronicReleaseReference' && !canViewReleaseReferences(currentUser, request)) return [key, 'Restricted'];
     return [key, value];
   });
-  const canProcess = ['archivist', 'admin'].includes(currentUser.role);
-  const canClose = ['archivist', 'admin'].includes(currentUser.role) || request.requestorId === currentUser.id;
-  const canCreateIncident = ['archivist', 'admin', 'dpo', 'ceo'].includes(currentUser.role);
+  const canProcess = ['archivist', ...adminRoles].includes(currentUser.role);
+  const canClose = ['archivist', ...adminRoles].includes(currentUser.role) || request.requestorId === currentUser.id;
+  const canCreateIncident = ['archivist', ...adminRoles, 'dpo', 'ceo'].includes(currentUser.role);
   const canEditDraft = request.status === 'Draft' && request.requestorId === currentUser.id;
 
   return <section className="page"><PageTitle title={request.requestNo} subtitle={request.documentTitle} /><div className="detail-grid"><InfoCard title="Request Information" items={[['Requestor', request.requestorName], ['Branch', request.branch], ['Department', request.department], ['Document Type', request.documentType], ['Confidentiality', request.confidentialityLevel], ['Purpose', request.purpose], ['Date Needed', request.dateNeeded], ['Return Due Date', request.borrowReturnDueDate], ['Current Approver', approver?.name || 'Not assigned'], ['Status', request.computedStatus || request.status]]} /><InfoCard title="Approval History" items={approvalLogs.length ? approvalLogs.map((log) => [log.createdAt, `${log.action}: ${log.remarks || log.newStatus}`]) : [['Status', 'No approval history yet']]} /><InfoCard title="Archivist Processing / Release" items={processingItems.length ? processingItems : [['Status', 'No processing record yet']]} /><InfoCard title="Return / Closure" items={Object.entries(closure).length ? Object.entries(closure) : [['Status', 'Not closed']]} /><InfoCard title="Incident Reports" items={requestIncidents.length ? requestIncidents.map((incident) => [incident.incidentType, incident.status]) : [['Status', 'No incidents']]} /></div><div className="actions">{canEditDraft && <button className="secondary" onClick={() => { setEditingRequestId(request.id); setPath('/requests/new'); }}>Edit Draft and Resend</button>}{canClose && <button onClick={() => setPath(`/requests/${request.id}/closure`)}>Return / Closure</button>}{canProcess && <button className="secondary" onClick={() => setPath(`/archivist/${request.id}/process`)}>Archivist Processing</button>}{canCreateIncident && <button className="ghost" onClick={() => setPath('/incidents/new')}>Create Incident</button>}</div><AuditTrailTable logs={auditLogs.filter((log) => log.requestId === request.id)} users={users} setPath={setPath} /></section>;
@@ -1175,8 +1184,8 @@ function RequestDetails({ request, users, processing, closures, incidents, audit
 function InfoCard({ title, items }) {
   return <article className="info-card"><h3>{title}</h3>{items.map(([key, value]) => {
     const text = String(value || '-');
-    const isLink = /^https?:\/\//i.test(text);
-    return <p key={key}><span>{humanize(key)}</span><strong>{isLink ? <a href={text} target="_blank" rel="noreferrer">{text}</a> : text}</strong></p>;
+    const isLink = /^(https?:\/\/|mailto:)/i.test(text);
+    return <p key={key}><span>{humanize(key)}</span><strong>{isLink ? <a className="compact-link" href={text} target="_blank" rel="noreferrer" title={text}>{text}</a> : text}</strong></p>;
   })}</article>;
 }
 
@@ -1184,9 +1193,16 @@ function humanize(value) {
   return String(value).replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase());
 }
 
+function normalizeReleaseLink(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (/^(https?:\/\/|mailto:)/i.test(text)) return text;
+  return `https://${text}`;
+}
+
 function ApprovalQueue({ currentUser, requests, updateRequestStatus, users, setPath }) {
   const isSharedPrivacyApprover = ['dpo', 'ceo'].includes(currentUser.role);
-  const queue = currentUser.role === 'admin'
+  const queue = adminRoles.includes(currentUser.role)
     ? requests.filter((request) => request.status === 'Pending Approval')
     : requests.filter((request) => {
       if (request.status !== 'Pending Approval') return false;
@@ -1196,7 +1212,6 @@ function ApprovalQueue({ currentUser, requests, updateRequestStatus, users, setP
   const [remarks, setRemarks] = useState('');
   const [errors, setErrors] = useState([]);
   const archivist = users.find((user) => user.role === 'archivist');
-  const headApprover = users.find((user) => user.role === 'department_head');
   const requireRemarks = (action) => {
     if (!remarks.trim()) {
       setErrors([`${action} remarks are required.`]);
@@ -1206,11 +1221,6 @@ function ApprovalQueue({ currentUser, requests, updateRequestStatus, users, setP
     return true;
   };
   const approve = (request) => {
-    if (currentUser.role === 'branch_head' && request.branch !== 'Main Office') {
-      updateRequestStatus(request.id, 'Pending Approval', 'Manager endorsed to Head', remarks || 'Endorsed for Head approval', { currentApprover: headApprover?.id || '', branchHeadRequestedBy: currentUser.id, branchHeadRequestedAt: new Date().toLocaleString() });
-      setRemarks('');
-      return;
-    }
     updateRequestStatus(request.id, 'Forwarded to Archivist', 'Approved and forwarded', remarks || 'Approved', { currentApprover: '', assignedArchivistId: archivist?.id, approvedBy: currentUser.id, approvedAt: new Date().toLocaleString(), forwardedToArchivistAt: new Date().toLocaleString() });
     setRemarks('');
   };
@@ -1219,7 +1229,7 @@ function ApprovalQueue({ currentUser, requests, updateRequestStatus, users, setP
     updateRequestStatus(request.id, 'Rejected', 'Rejected request', remarks, { rejectedBy: currentUser.id, rejectedAt: new Date().toLocaleString(), rejectionReason: remarks });
     setRemarks('');
   };
-  return <section className="page"><PageTitle title="Approval Queue" subtitle="Requests appear here only for the assigned approver, except confidential requests also appear to Admin DPO/CEO." />{errors.length > 0 && <AlertList items={errors} />}<textarea className="remarks-box" placeholder="Remarks required for rejection; optional for approval" value={remarks} onChange={(e) => setRemarks(e.target.value)} /><div className="queue-list">{queue.map((request) => <article className="queue-card" key={request.id} onClick={() => setPath(`/requests/${request.id}`)}><div><h3>{request.documentTitle}</h3><p>{request.requestNo} by {request.requestorName}</p><p>Assigned approver: {users.find((user) => user.id === request.currentApprover)?.name || (request.confidentialityLevel === 'Confidential' ? 'Admin DPO / CEO' : 'Not assigned')}</p><p>Reminder: bring back or revoke access by {request.borrowReturnDueDate || 'the approved due date'}.</p><span className={statusClass(request.status)}>{request.status}</span></div><div className="actions" onClick={(event) => event.stopPropagation()}><button onClick={() => approve(request)}>{currentUser.role === 'branch_head' ? 'Endorse to Head' : 'Approve'}</button><button className="danger" onClick={() => reject(request)}>Reject</button></div></article>)}{!queue.length && <Empty message="No approval items." />}</div></section>;
+  return <section className="page"><PageTitle title="Approval Queue" subtitle="Requests appear here only for the assigned approver, except confidential requests also appear to Admin DPO/CEO." />{errors.length > 0 && <AlertList items={errors} />}<textarea className="remarks-box" placeholder="Remarks required for rejection; optional for approval" value={remarks} onChange={(e) => setRemarks(e.target.value)} /><div className="queue-list">{queue.map((request) => <article className="queue-card" key={request.id} onClick={() => setPath(`/requests/${request.id}`)}><div><h3>{request.documentTitle}</h3><p>{request.requestNo} by {request.requestorName}</p><p>Assigned approver: {users.find((user) => user.id === request.currentApprover)?.name || (request.confidentialityLevel === 'Confidential' ? 'Admin DPO / CEO' : 'Not assigned')}</p><p>Reminder: bring back or revoke access by {request.borrowReturnDueDate || 'the approved due date'}.</p><span className={statusClass(request.status)}>{request.status}</span></div><div className="actions" onClick={(event) => event.stopPropagation()}><button onClick={() => approve(request)}>Approve</button><button className="danger" onClick={() => reject(request)}>Reject</button></div></article>)}{!queue.length && <Empty message="No approval items." />}</div></section>;
 }
 function ArchivistQueue({ requests, setPath }) {
   const queue = requests.filter((request) => ['Approved', 'Forwarded to Archivist', 'Processing'].includes(request.status));
@@ -1227,7 +1237,7 @@ function ArchivistQueue({ requests, setPath }) {
 }
 
 function ArchivistProcess({ request, currentUser, processing, setProcessing, updateRequestStatus, setPath }) {
-  const [form, setForm] = useState(processing[request?.id] || { dateReceived: today(), dateReleased: today(), borrowerName: request?.requestorName || '', expectedReturnDate: request?.borrowReturnDueDate || today(), physicalConditionBeforeRelease: 'Good Condition', storageLocation: '', electronicReleaseMethod: 'Email', electronicReleaseReference: '', accessExpiryDate: request?.borrowReturnDueDate || today(), deletionConfirmationRequired: false, releaseRemarks: '' });
+  const [form, setForm] = useState(processing[request?.id] || { dateReceived: today(), dateReleased: today(), borrowerName: request?.requestorName || '', expectedReturnDate: request?.borrowReturnDueDate || today(), physicalConditionBeforeRelease: 'Good Condition', storageLocation: '', electronicReleaseMethod: 'Link', electronicReleaseReference: '', accessExpiryDate: request?.borrowReturnDueDate || today(), deletionConfirmationRequired: false, releaseRemarks: '' });
   const [errors, setErrors] = useState([]);
   if (!request) return <Empty message="Request not found." />;
   const isReleasedViewOnly = ['Released', 'Closed', 'Returned', 'For Closure'].includes(request.status) && (request.documentType === 'Electronic' || form.physicalConditionBeforeRelease === 'Good Condition');
@@ -1253,18 +1263,19 @@ function ArchivistProcess({ request, currentUser, processing, setProcessing, upd
   };
   const startProcessing = () => {
     if (isReleasedViewOnly) return;
-    setProcessing((records) => ({ ...records, [request.id]: { ...form, archivistId: currentUser.id } }));
+    setProcessing((records) => ({ ...records, [request.id]: { ...form, electronicReleaseReference: normalizeReleaseLink(form.electronicReleaseReference), archivistId: currentUser.id } }));
     updateRequestStatus(request.id, 'Processing', 'Started archivist processing', 'Retrieval is being prepared.', { assignedArchivistId: currentUser.id });
     setPath('/archivist');
   };
   const release = () => {
     if (isReleasedViewOnly) return;
     if (!validateRelease()) return;
-    setProcessing((records) => ({ ...records, [request.id]: { ...form, archivistId: currentUser.id } }));
+    const electronicReleaseReference = normalizeReleaseLink(form.electronicReleaseReference);
+    setProcessing((records) => ({ ...records, [request.id]: { ...form, electronicReleaseReference, archivistId: currentUser.id } }));
     updateRequestStatus(request.id, 'Released', 'Released document', form.releaseRemarks, { assignedArchivistId: currentUser.id });
     setPath('/archivist');
   };
-  return <section className="page"><PageTitle title="Archivist Processing" subtitle={`${request.requestNo} - ${request.documentType}`} />{errors.length > 0 && <AlertList items={errors} />}{isReleasedViewOnly && <div className="alert">This request has already been released in good condition and is now view-only.</div>}<div className="toolbar-row"><span className="helper-text">Approved return/access deadline: {request.borrowReturnDueDate || 'Not set'}. Turnaround guide: active files same day; archived physical files 1 to 2 working days.</span>{!isReleasedViewOnly && request.status !== 'Processing' && <button className="secondary" type="button" onClick={startProcessing}>Start Processing</button>}</div><div className="form-grid">{request.documentType === 'Physical' ? <><Field label="Name of Archivist" value={currentUser.name} readOnly /><Field label="Name of Borrower" value={form.borrowerName} readOnly={isReleasedViewOnly} onChange={(v) => update('borrowerName', v)} /><Field label="Date Received" type="date" value={form.dateReceived} readOnly={isReleasedViewOnly} onChange={(v) => update('dateReceived', v)} /><Field label="Date Released" type="date" value={form.dateReleased} min={form.dateReceived || today()} readOnly={isReleasedViewOnly} onChange={(v) => update('dateReleased', v)} /><Field label="Expected Date of Return" type="date" value={form.expectedReturnDate} min={form.dateReleased || today()} readOnly={isReleasedViewOnly} onChange={(v) => update('expectedReturnDate', v)} /><Field label="Condition Before Release" type="select" value={form.physicalConditionBeforeRelease} options={['Good Condition', 'With Existing Damage', 'With Missing Pages', 'With Markings', 'Other']} readOnly={isReleasedViewOnly} onChange={(v) => update('physicalConditionBeforeRelease', v)} /><Field label="Storage Location" value={form.storageLocation} readOnly={isReleasedViewOnly} onChange={(v) => update('storageLocation', v)} /></> : <><Field label="File Released Via" type="select" value={form.electronicReleaseMethod} options={['Email', 'Shared Drive', 'Shared Link', 'Cloud Platform', 'Other']} readOnly={isReleasedViewOnly} onChange={(v) => update('electronicReleaseMethod', v)} /><Field label="Release Reference / Shared Link" value={form.electronicReleaseReference} readOnly={isReleasedViewOnly} onChange={(v) => update('electronicReleaseReference', v)} /><Field label="Access Expiry Date" type="date" value={form.accessExpiryDate} min={today()} readOnly={isReleasedViewOnly} onChange={(v) => update('accessExpiryDate', v)} /><label className="agreement"><input type="checkbox" checked={form.deletionConfirmationRequired} disabled={isReleasedViewOnly} onChange={(e) => update('deletionConfirmationRequired', e.target.checked)} /> Deletion confirmation required</label></>}<Field className="wide" label="Release Remarks" type="textarea" value={form.releaseRemarks} readOnly={isReleasedViewOnly} onChange={(v) => update('releaseRemarks', v)} /></div>{!isReleasedViewOnly && <button onClick={release}>Save and Mark Released</button>}</section>;
+  return <section className="page"><PageTitle title="Archivist Processing" subtitle={`${request.requestNo} - ${request.documentType}`} />{errors.length > 0 && <AlertList items={errors} />}{isReleasedViewOnly && <div className="alert">This request has already been released in good condition and is now view-only.</div>}<div className="toolbar-row"><span className="helper-text">Approved return/access deadline: {request.borrowReturnDueDate || 'Not set'}. Turnaround guide: active files same day; archived physical files 1 to 2 working days.</span>{!isReleasedViewOnly && request.status !== 'Processing' && <button className="secondary" type="button" onClick={startProcessing}>Start Processing</button>}</div><div className="form-grid">{request.documentType === 'Physical' ? <><Field label="Name of Archivist" value={currentUser.name} readOnly /><Field label="Name of Borrower" value={form.borrowerName} readOnly={isReleasedViewOnly} onChange={(v) => update('borrowerName', v)} /><Field label="Date Received" type="date" value={form.dateReceived} readOnly={isReleasedViewOnly} onChange={(v) => update('dateReceived', v)} /><Field label="Date Released" type="date" value={form.dateReleased} min={form.dateReceived || today()} readOnly={isReleasedViewOnly} onChange={(v) => update('dateReleased', v)} /><Field label="Expected Date of Return" type="date" value={form.expectedReturnDate} min={form.dateReleased || today()} readOnly={isReleasedViewOnly} onChange={(v) => update('expectedReturnDate', v)} /><Field label="Condition Before Release" type="select" value={form.physicalConditionBeforeRelease} options={['Good Condition', 'With Existing Damage', 'With Missing Pages', 'With Markings', 'Other']} readOnly={isReleasedViewOnly} onChange={(v) => update('physicalConditionBeforeRelease', v)} /><Field label="Storage Location" value={form.storageLocation} readOnly={isReleasedViewOnly} onChange={(v) => update('storageLocation', v)} /></> : <><Field label="File Released Via" type="select" value={form.electronicReleaseMethod} options={['Link', 'Shared Drive', 'Cloud Platform', 'Other']} readOnly={isReleasedViewOnly} onChange={(v) => update('electronicReleaseMethod', v)} /><Field label="Electronic Release Link" type="url" value={form.electronicReleaseReference} placeholder="https://..." readOnly={isReleasedViewOnly} onChange={(v) => update('electronicReleaseReference', v)} /><Field label="Access Expiry Date" type="date" value={form.accessExpiryDate} min={today()} readOnly={isReleasedViewOnly} onChange={(v) => update('accessExpiryDate', v)} /><label className="agreement"><input type="checkbox" checked={form.deletionConfirmationRequired} disabled={isReleasedViewOnly} onChange={(e) => update('deletionConfirmationRequired', e.target.checked)} /> Deletion confirmation required</label></>}<Field className="wide" label="Release Remarks" type="textarea" value={form.releaseRemarks} readOnly={isReleasedViewOnly} onChange={(v) => update('releaseRemarks', v)} /></div>{!isReleasedViewOnly && <button onClick={release}>Save and Mark Released</button>}</section>;
 }
 function ClosurePage({ request, currentUser, processing, closures, incidents, setClosures, updateRequestStatus, setIncidents }) {
   const record = processing[request?.id] || {};
@@ -1532,7 +1543,7 @@ const policyReferenceSections = [
     title: 'Request and Retrieval Procedure',
     items: [
       'Submission: The requestor submits an online Document Retrieval Request containing the document title, purpose of retrieval, date needed, and format type, either physical or electronic.',
-      'Review and Approval: The request is routed to designated approvers depending on the user role, including Branch Heads for branch staff, Department Heads for main office staff, and the Data Privacy Officer or CEO for confidential records.',
+      'Review and Approval: Requests are routed to the designated approver based on role and confidentiality before processing.',
       'Processing: Once approved, the assigned Branch Archivist retrieves and releases the files.',
     ],
   },
@@ -1607,7 +1618,7 @@ const systemProcessSteps = [
     title: 'Route Approval',
     owner: 'Approving Authority',
     status: 'Approved / Rejected',
-    description: 'Staff requests route to Branch Heads, Branch Head requests to SACD, Main Office requests to Department Heads, and sensitive records to the DPO or CEO.',
+    description: 'Requests route to the designated approver based on role and confidentiality before processing.',
   },
   {
     step: '4',

@@ -17,7 +17,8 @@ create table public.profiles (
       'dpo',
       'ceo',
       'archivist',
-      'admin'
+      'admin',
+      'superadmin'
     )
   ),
   is_active boolean default true,
@@ -174,7 +175,7 @@ language sql
 security definer
 stable
 as $$
-  select coalesce(public.get_my_role() = 'admin', false)
+  select coalesce(public.get_my_role() in ('admin', 'superadmin'), false)
 $$;
 
 create or replace function public.is_archivist()
