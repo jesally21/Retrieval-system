@@ -1,237 +1,154 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
+import { supabase, supabaseConfig } from './lib/supabaseClient';
+import {
+  createUserAccount,
+  deleteUserAccount,
+  getCurrentSessionUser,
+  signInWithEmailPassword,
+  signOut as supabaseSignOut,
+  updateOwnProfile,
+  updateUserAccount,
+} from './lib/supabaseAuth';
+import {
+  deleteRequestRecord,
+  createRequestRecord,
+  loadSupabaseAppData,
+  normalizeBranchName,
+  normalizeRole,
+  resolveRequestApprover,
+  saveAuditLogRecord,
+  saveClosureRecord,
+  saveIncidentRecord,
+  saveProcessingRecord,
+  saveRequestRecord,
+} from './lib/supabaseData';
 
 const roles = {
-  requestor: 'Staff - Requestor',
-  branch_head: 'Manager - Approver of Requestor',
-  department_head: 'Head - Approver of Requestors and Managers',
-  dpo: 'Admin - DPO',
-  ceo: 'Admin - CEO',
-  archivist: 'Archivist - Process Approved Docs',
-  admin: 'Admin - ICT',
-  superadmin: 'Super Admin - ICT',
+  requestor: 'STAFF - REQUESTOR',
+  branch_head: 'MANAGER - APPROVER OF REQUESTOR',
+  department_head: 'HEAD - APPROVER OF REQUESTORS AND MANAGERS',
+  dpo: 'ADMIN - DPO',
+  ceo: 'ADMIN - CEO',
+  archivist: 'ARCHIVIST - PROCESS APPROVED DOCS',
+  superadmin: 'SUPER ADMIN - ICT',
 };
 
-const adminRoles = ['admin', 'superadmin'];
+const adminRoles = ['superadmin', 'ceo', 'dpo'];
+const superAdminRoles = ['superadmin'];
 
-const branches = ['Main Office', 'Culasi', 'Sibalom', 'San Jose', 'Balasan', 'Barotac Viejo', 'Molo', 'Janiuay', 'Caticlan', 'Kalibo', 'San Remigio'];
-const departments = ['ICT Department', 'HRAD', 'Accounting', 'Audit', 'SACD', 'Lending', 'Savings', 'Broadband Division', 'Records / Archive'];
+const branches = ['Culasi', 'Sibalom', 'San Jose', 'Balasan', 'Barotac Viejo', 'Molo', 'Janiuay', 'Caticlan', 'Kalibo', 'San Remigio', 'Barbaza', 'Hamtic', 'Laua-an'];
+const departments = ['ICT Department', 'HRAD', 'Accounting', 'Audit', 'SACD', 'Lending', 'Savings', 'Broadband Division', 'Records / Archive', 'Branch Operations', 'Compliance', 'Executive'];
 const statuses = ['Draft', 'Pending Approval', 'Rejected', 'Approved', 'Forwarded to Archivist', 'Processing', 'Released', 'Returned', 'Access Revoked', 'Deletion Confirmed', 'For Closure', 'Closed', 'Incident Reported', 'Overdue'];
 const confidentialityLevels = ['Non Confidential', 'Confidential'];
-const branchAliases = {
-  'Head Office': 'Main Office',
-  Barbaza: 'Culasi',
-  Hamtic: 'Balasan',
-  'Laua-an': 'Janiuay',
-};
 
-function normalizeBranchName(branch) {
-  return branchAliases[branch] || branch || branches[0];
+function readErrorMessage(error, fallbackMessage = 'Something went wrong.') {
+  if (!error) return fallbackMessage;
+  if (typeof error === 'string') {
+    const message = error.trim();
+    if (!message || message === '{}' || message === '[object Object]') return fallbackMessage;
+    return message;
+  }
+  if (error instanceof Error) return error.message || fallbackMessage;
+  if (typeof error === 'object') {
+    const message = error.message || error.error_description || error.details || error.hint;
+    if (typeof message === 'string' && message.trim() && message !== '{}' && message !== '[object Object]') {
+      return message.trim();
+    }
+    if (error.status || error.code) {
+      return `${fallbackMessage} (${error.status || error.code})`;
+    }
+    try {
+      const serialized = JSON.stringify(error);
+      if (serialized && serialized !== '{}') return serialized;
+    } catch {
+      // ignore serialization failures
+    }
+  }
+  return fallbackMessage;
 }
 
-export function getAvatarUrl(name, gender) {
-  const isFemale = gender === 'female';
-  const palette = isFemale
-    ? { bg1: '#f7b7d8', bg2: '#8b5cf6', hair: '#3b1d52', shirt: '#be185d', accent: '#f9a8d4' }
-    : { bg1: '#8bd3ff', bg2: '#0f766e', hair: '#172554', shirt: '#1757a7', accent: '#93c5fd' };
-  const hair = isFemale
-    ? '<path d="M35 62c0-22 12-38 29-38s29 16 29 38v30H35V62z" fill="' + palette.hair + '"/><path d="M29 95c7-19 16-27 35-27s28 8 35 27v16H29V95z" fill="' + palette.hair + '" opacity=".92"/>'
-    : '<path d="M35 50c5-18 21-28 39-21 11 4 18 12 20 25-15-5-30-7-59-4z" fill="' + palette.hair + '"/>';
+function normalizeLoadedSettings(settings = {}) {
+  return {
+    branches: Array.isArray(settings.branches) ? settings.branches : [],
+    departments: Array.isArray(settings.departments) ? settings.departments : [],
+    categories: Array.isArray(settings.categories) ? settings.categories : [],
+  };
+}
+
+function normalizeLoadedUsers(users = []) {
+  return Array.isArray(users) ? users.map((user) => ({
+    ...user,
+    password: undefined,
+    status: user.status || (user.is_active === false ? 'Inactive' : 'Active'),
+    createdAt: user.createdAt || user.created_at || '',
+    createdBy: user.createdBy || user.created_by || '',
+    createdByName: user.createdByName || user.created_by_name || '',
+  })) : [];
+}
+
+function mergeLoadedUsers(...userLists) {
+  const merged = new Map();
+
+  for (const list of userLists) {
+    for (const user of Array.isArray(list) ? list : []) {
+      const key = user?.id || user?.email;
+      if (!key) continue;
+      const existing = merged.get(key) || {};
+      merged.set(key, {
+        ...existing,
+        ...user,
+        password: undefined,
+        status: user.status || existing.status || (user.is_active === false || existing.is_active === false ? 'Inactive' : 'Active'),
+        createdAt: user.createdAt || user.created_at || existing.createdAt || existing.created_at || '',
+        createdBy: user.createdBy || user.created_by || existing.createdBy || existing.created_by || '',
+        createdByName: user.createdByName || user.created_by_name || existing.createdByName || existing.created_by_name || '',
+      });
+    }
+  }
+
+  return Array.from(merged.values());
+}
+
+function mapAuthUserToProfile(user) {
+  const metadata = user?.user_metadata || {};
+  const name = metadata.full_name || metadata.name || user?.email || 'User';
+  const role = normalizeRole(metadata.role || 'requestor');
+  return {
+    id: user.id,
+    name,
+    email: user.email || '',
+    role,
+    branch: normalizeBranchName(metadata.branch || 'Head Office'),
+    department: metadata.department || 'Savings',
+    position: metadata.position || 'Staff',
+    status: metadata.status || 'Active',
+    avatar: metadata.avatar_url || getAvatarUrl(name),
+    is_active: true,
+    avatarCustom: Boolean(metadata.avatar_url),
+  };
+}
+
+function buildFallbackSnapshot(user) {
+  const currentUser = user ? mapAuthUserToProfile(user) : null;
+  return {
+    users: currentUser ? [currentUser] : [],
+    requests: [],
+    processing: {},
+    closures: {},
+    incidents: [],
+    auditLogs: [],
+    settings: normalizeLoadedSettings({}),
+  };
+}
+
+export function getAvatarUrl(name) {
+  const palette = { bg1: '#8bd3ff', bg2: '#0f766e', hair: '#172554', shirt: '#1757a7', accent: '#93c5fd' };
+  const hair = '<path d="M35 50c5-18 21-28 39-21 11 4 18 12 20 25-15-5-30-7-59-4z" fill="' + palette.hair + '"/>';
   const face = '<circle cx="64" cy="61" r="26" fill="#ffd7ba"/><circle cx="54" cy="61" r="3" fill="#1f2937"/><circle cx="74" cy="61" r="3" fill="#1f2937"/><path d="M55 75c6 5 13 5 19 0" stroke="#9f1239" stroke-width="4" stroke-linecap="round" fill="none"/>';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><defs><linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="${palette.bg1}"/><stop offset="1" stop-color="${palette.bg2}"/></linearGradient></defs><rect width="128" height="128" rx="64" fill="url(#bg)"/><circle cx="98" cy="28" r="12" fill="${palette.accent}" opacity=".72"/>${hair}${face}<path d="M26 126c6-25 20-39 38-39s32 14 38 39H26z" fill="${palette.shirt}"/><path d="M53 90h22l-11 14-11-14z" fill="#fff" opacity=".88"/></svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
-
-const initialUsers = [
-  { id: 'u1', name: 'NAIH MAERCHESSA', email: 'naih@gmail.com', password: '@naih123', gender: 'female', role: 'requestor', branch: 'Culasi', department: 'Savings', position: 'Staff', avatar: getAvatarUrl('NAIH MAERCHESSA', 'female') },
-  { id: 'u2', name: 'LEIGH ENRILE', email: 'leigh@gmail.com', password: '@leigh123', gender: 'male', role: 'branch_head', branch: 'Culasi', department: 'Branch Operations', position: 'Manager', avatar: getAvatarUrl('LEIGH ENRILE', 'male') },
-  { id: 'u4', name: 'MAXWON MOON', email: 'maxwon@gmail.com', password: '@maxwon132', gender: 'male', role: 'department_head', branch: 'Main Office', department: 'ICT Department', position: 'Head', avatar: getAvatarUrl('MAXWON MOON', 'male') },
-  { id: 'u5', name: 'DEIB ENRILE', email: 'deib@gmail.com', password: '@deib123', gender: 'male', role: 'dpo', branch: 'Main Office', department: 'Compliance', position: 'Data Privacy Officer', avatar: getAvatarUrl('DEIB ENRILE', 'male') },
-  { id: 'u6', name: 'MAXPEIN MOON', email: 'maxspein@gmail.com', password: '@maxspein123', gender: 'male', role: 'ceo', branch: 'Main Office', department: 'Executive', position: 'CEO', avatar: getAvatarUrl('MAXPEIN MOON', 'male') },
-  { id: 'u7', name: 'LEE GOZON', email: 'lee@gmail.com', password: '@lee123', gender: 'male', role: 'archivist', branch: 'Main Office', department: 'Records / Archive', position: 'Archivist', avatar: getAvatarUrl('LEE GOZON', 'male') },
-  { id: 'u9', name: 'RANDAL ECHAVEZ', email: 'randal@gmail.com', password: '@randal123', gender: 'male', role: 'superadmin', branch: 'Main Office', department: 'ICT Department', position: 'Super Admin', avatar: getAvatarUrl('RANDAL ECHAVEZ', 'male') },
-];
-
-const usersStorageKey = 'bmpc-document-retrieval-users';
-const requestsStorageKey = 'bmpc-document-retrieval-requests';
-const processingStorageKey = 'bmpc-document-retrieval-processing';
-const closuresStorageKey = 'bmpc-document-retrieval-closures';
-const incidentsStorageKey = 'bmpc-document-retrieval-incidents';
-const auditLogsStorageKey = 'bmpc-document-retrieval-audit-logs';
-const settingsStorageKey = 'bmpc-document-retrieval-settings';
-
-function loadStoredValue(key, fallbackValue) {
-  if (typeof window === 'undefined') return fallbackValue;
-  try {
-    const storedValue = JSON.parse(window.localStorage.getItem(key) || 'null');
-    return storedValue === null ? fallbackValue : storedValue;
-  } catch {
-    return fallbackValue;
-  }
-}
-
-function saveStoredValue(key, value) {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Keep the in-session update even if browser storage is full or unavailable.
-  }
-}
-
-function getDefaultUsers() {
-  return initialUsers.map((user) => ({ ...user }));
-}
-
-function loadStoredUsers() {
-  const fallbackUsers = getDefaultUsers();
-  const storedUsers = loadStoredValue(usersStorageKey, []).filter((user) => user.id !== 'u3' && user.name !== 'Lina Reyes' && user.role !== 'sacd_head' && user.id !== 'u8' && user.name !== 'MAXSPAUN ENRILE' && user.email !== 'maxspaun@gmail.com');
-  if (!Array.isArray(storedUsers) || storedUsers.length === 0) return fallbackUsers;
-  const storedById = new Map(storedUsers.map((user) => [user.id, user]));
-  const mergedUsers = fallbackUsers.map((user) => {
-    const storedUser = storedById.get(user.id);
-    return {
-      ...storedUser,
-      ...user,
-      branch: normalizeBranchName(user.branch || storedUser?.branch),
-      department: user.department || storedUser?.department,
-      position: user.position || storedUser?.position,
-    };
-  });
-  const newUsers = storedUsers
-    .filter((user) => !fallbackUsers.some((fallbackUser) => fallbackUser.id === user.id))
-    .map((user) => ({ ...user, branch: normalizeBranchName(user.branch) }));
-  return [...mergedUsers, ...newUsers];
-}
-
-const seedRequests = [
-  {
-    id: 'r1',
-    requestNo: 'DRR-20260708-0001',
-    requestorId: 'u1',
-    requestorName: 'Mara Dela Cruz',
-    requestDate: '2026-07-08',
-    documentTitle: 'Member Loan Ledger 2025',
-    documentType: 'Physical',
-    confidentialityLevel: 'Non Confidential',
-    purpose: 'Account verification for member inquiry.',
-    dateNeeded: '2026-07-09',
-    borrowReturnDueDate: '2026-07-13',
-    remarks: 'Original ledger needed for review.',
-    branch: 'Culasi',
-    department: 'Savings',
-    position: 'Member Services Associate',
-    status: 'Forwarded to Archivist',
-    currentApprover: 'u2',
-    assignedArchivistId: 'u7',
-    agreementAccepted: true,
-  },
-  {
-    id: 'r2',
-    requestNo: 'DRR-20260708-0002',
-    requestorId: 'u4',
-    requestorName: 'Ana Villanueva',
-    requestDate: '2026-07-08',
-    documentTitle: 'Payroll Register Q2',
-    documentType: 'Electronic',
-    confidentialityLevel: 'Confidential',
-    purpose: 'Internal audit reconciliation.',
-    dateNeeded: '2026-07-10',
-    borrowReturnDueDate: '2026-07-14',
-    remarks: 'Read-only copy preferred.',
-    branch: 'Main Office',
-    department: 'ICT Department',
-    position: 'Department Head',
-    status: 'Pending Approval',
-    currentApprover: 'u5',
-    assignedArchivistId: '',
-    agreementAccepted: true,
-  },
-  {
-    id: 'r3',
-    requestNo: 'DRR-20260709-0001',
-    requestorId: 'u4',
-    requestorName: 'Ana Villanueva',
-    requestDate: '2026-07-09',
-    documentTitle: 'Board Resolution Book 2024',
-    documentType: 'Physical',
-    confidentialityLevel: 'Confidential',
-    purpose: 'Validate cooperative policy reference for SACD review.',
-    dateNeeded: '2026-07-11',
-    borrowReturnDueDate: '2026-07-13',
-    remarks: 'Release only inside records room.',
-    branch: 'Sibalom',
-    department: 'ICT Department',
-    position: 'Head Approver',
-    status: 'Processing',
-    currentApprover: 'u5',
-    assignedArchivistId: 'u7',
-    agreementAccepted: true,
-  },
-  {
-    id: 'r4',
-    requestNo: 'DRR-20260709-0002',
-    requestorId: 'u5',
-    requestorName: 'Joel Santos',
-    requestDate: '2026-07-09',
-    documentTitle: 'Member KYC Verification Pack',
-    documentType: 'Electronic',
-    confidentialityLevel: 'Confidential',
-    purpose: 'Privacy compliance validation for an account update.',
-    dateNeeded: '2026-07-12',
-    borrowReturnDueDate: '2026-07-12',
-    remarks: 'Temporary encrypted access requested.',
-    branch: 'Main Office',
-    department: 'Compliance',
-    position: 'Data Privacy Officer',
-    status: 'Released',
-    currentApprover: 'u5',
-    assignedArchivistId: 'u7',
-    agreementAccepted: true,
-  },
-  {
-    id: 'r5',
-    requestNo: 'DRR-20260710-0001',
-    requestorId: 'u1',
-    requestorName: 'Mara Dela Cruz',
-    requestDate: '2026-07-10',
-    documentTitle: 'Savings Dormant Account Register',
-    documentType: 'Electronic',
-    confidentialityLevel: 'Confidential',
-    purpose: 'Prepare branch-level reactivation report.',
-    dateNeeded: '2026-07-13',
-    borrowReturnDueDate: '2026-07-17',
-    remarks: 'Branch-only copy.',
-    branch: 'Kalibo',
-    department: 'Savings',
-    position: 'Member Services Associate',
-    status: 'Pending Approval',
-    currentApprover: 'u5',
-    assignedArchivistId: '',
-    agreementAccepted: true,
-  },
-  {
-    id: 'r6',
-    requestNo: 'DRR-20260710-0002',
-    requestorId: 'u4',
-    requestorName: 'Ana Villanueva',
-    requestDate: '2026-07-10',
-    documentTitle: 'ICT Asset Warranty File',
-    documentType: 'Physical',
-    confidentialityLevel: 'Non Confidential',
-    purpose: 'Warranty validation before replacement procurement.',
-    dateNeeded: '2026-07-10',
-    borrowReturnDueDate: '2026-07-10',
-    remarks: 'Folder includes supplier invoices.',
-    branch: 'Main Office',
-    department: 'ICT Department',
-    position: 'Department Head',
-    status: 'Closed',
-    currentApprover: 'u4',
-    assignedArchivistId: 'u7',
-    agreementAccepted: true,
-  },
-];
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -245,11 +162,22 @@ function generateRequestNo(requests) {
 
 function determineApprover(profile, request, users) {
   const requestBranch = request.branch || profile.branch;
-  if (request.confidentialityLevel === 'Confidential') return users.find((user) => user.role === 'dpo')?.id || users.find((user) => user.role === 'ceo')?.id || '';
-  if (profile.role === 'requestor') return users.find((user) => user.role === 'branch_head' && user.branch === requestBranch)?.id || users.find((user) => user.role === 'branch_head')?.id || '';
-  if (profile.role === 'branch_head') return users.find((user) => user.role === 'department_head')?.id || '';
-  if (['department_head', 'dpo', 'ceo'].includes(profile.role)) return users.find((user) => adminRoles.includes(user.role))?.id || '';
+  if (request.confidentialityLevel === 'Confidential') {
+    return users.find((user) => user.role === 'dpo')?.id || users.find((user) => user.role === 'ceo')?.id || users.find((user) => user.role === 'superadmin')?.id || '';
+  }
+  if (profile.role === 'requestor') {
+    if (requestBranch === 'Head Office') {
+      return users.find((user) => user.role === 'department_head')?.id || users.find((user) => user.role === 'branch_head')?.id || '';
+    }
+    return users.find((user) => user.role === 'branch_head' && user.branch === requestBranch)?.id || users.find((user) => user.role === 'branch_head')?.id || users.find((user) => user.role === 'department_head')?.id || '';
+  }
+  if (profile.role === 'branch_head') return users.find((user) => user.role === 'department_head')?.id || users.find((user) => user.role === 'superadmin')?.id || '';
+  if (['department_head', 'dpo', 'ceo'].includes(profile.role)) return users.find((user) => user.role === 'superadmin')?.id || users.find((user) => adminRoles.includes(user.role))?.id || '';
   return users.find((user) => adminRoles.includes(user.role))?.id || '';
+}
+
+function getUserNameById(users, id) {
+  return users.find((user) => user.id === id)?.name || '';
 }
 
 function hasOpenIncident(request, incidents = []) {
@@ -274,16 +202,6 @@ function hasDueDateWarning(request) {
   return (request.computedStatus || request.status) === 'Overdue';
 }
 
-function loadStoredRequests() {
-  const storedRequests = loadStoredValue(requestsStorageKey, seedRequests);
-  if (!Array.isArray(storedRequests)) return seedRequests;
-  return storedRequests.map((request) => ({
-    ...request,
-    branch: normalizeBranchName(request.branch),
-    confidentialityLevel: request.confidentialityLevel === 'Confidential' || request.confidentialityLevel === 'Highly Sensitive' ? 'Confidential' : 'Non Confidential',
-  }));
-}
-
 function statusClass(status) {
   const key = status.toLowerCase().replaceAll(' ', '-');
   return `badge status-${key}`;
@@ -302,23 +220,23 @@ function getStatusBadgeVariant(status) {
 function isPathAllowed(path, role) {
   const rules = [
     { test: /^\/dashboard$/, roles: Object.keys(roles) },
-    { test: /^\/requests\/new$/, roles: ['requestor', 'branch_head', 'department_head', 'admin', 'superadmin'] },
+    { test: /^\/requests\/new$/, roles: ['requestor', 'branch_head', 'department_head', 'superadmin'] },
     { test: /^\/requests\/my$/, roles: ['requestor', 'branch_head', 'department_head'] },
-    { test: /^\/requests\/all$/, roles: ['admin', 'superadmin', 'ceo', 'dpo'] },
+    { test: /^\/requests\/all$/, roles: superAdminRoles },
     { test: /^\/requests\/[^/]+(\/closure)?$/, roles: Object.keys(roles) },
-    { test: /^\/approvals$/, roles: ['branch_head', 'department_head', 'dpo', 'ceo', 'admin', 'superadmin'] },
-    { test: /^\/archivist(\/[^/]+\/process)?$/, roles: ['archivist', 'admin', 'superadmin'] },
-    { test: /^\/incidents(\/new)?$/, roles: ['archivist', 'admin', 'superadmin', 'dpo', 'ceo'] },
-    { test: /^\/reports$/, roles: ['branch_head', 'department_head', 'dpo', 'ceo', 'archivist', 'admin', 'superadmin'] },
-    { test: /^\/users$/, roles: ['admin', 'superadmin'] },
-    { test: /^\/settings$/, roles: ['admin', 'superadmin'] },
-    { test: /^\/audit-logs$/, roles: ['admin', 'superadmin'] },
+    { test: /^\/approvals$/, roles: ['branch_head', 'department_head', 'dpo', 'ceo', 'superadmin'] },
+    { test: /^\/archivist(\/[^/]+\/process)?$/, roles: ['archivist', 'superadmin'] },
+    { test: /^\/incidents(\/new)?$/, roles: ['archivist', 'superadmin', 'dpo', 'ceo'] },
+    { test: /^\/reports$/, roles: ['branch_head', 'department_head', 'dpo', 'ceo', 'archivist', 'superadmin'] },
+    { test: /^\/users$/, roles: superAdminRoles },
+    { test: /^\/settings$/, roles: superAdminRoles },
+    { test: /^\/audit-logs$/, roles: superAdminRoles },
   ];
   return rules.some((rule) => rule.test.test(path) && rule.roles.includes(role));
 }
 
 function canViewReleaseReferences(user, request) {
-  return request.requestorId === user.id || request.assignedArchivistId === user.id || adminRoles.includes(user.role) || ['dpo', 'ceo'].includes(user.role);
+  return request.requestorId === user.id || request.assignedArchivistId === user.id || user.role === 'archivist' || adminRoles.includes(user.role) || ['dpo', 'ceo'].includes(user.role);
 }
 
 function validateRequestForm(form) {
@@ -338,78 +256,23 @@ function validateRequestForm(form) {
 }
 
 function App() {
-  const [users, setUsers] = useState(loadStoredUsers);
-  const [currentUserId, setCurrentUserId] = useState('u9');
+  const [users, setUsers] = useState([]);
+  const [currentUserId, setCurrentUserId] = useState('');
   const [path, setPathState] = useState('/dashboard');
   const [theme, setTheme] = useState('dark');
   const [editingRequestId, setEditingRequestId] = useState(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const pathHistoryRef = useRef([]);
-  const [requests, setRequests] = useState(loadStoredRequests);
-  const [processing, setProcessing] = useState(() => loadStoredValue(processingStorageKey, {
-    r3: {
-      dateReceived: '2026-07-10',
-      dateReleased: '',
-      borrowerName: 'Ana Villanueva',
-      expectedReturnDate: '2026-07-13',
-      physicalConditionBeforeRelease: 'Good Condition',
-      storageLocation: 'Records Room A / Cabinet 2',
-      releaseRemarks: 'Pulled from board files; awaiting controlled release.',
-      archivistId: 'u7',
-    },
-    r4: {
-      electronicReleaseMethod: 'Link',
-      electronicReleaseReference: 'https://cnorkbyngylonroqmkef.supabase.co/storage/v1/object/public/releases/EXP-20260712',
-      accessExpiryDate: '2026-07-12',
-      deletionConfirmationRequired: true,
-      accessRevoked: false,
-      releaseRemarks: 'Read-only access granted to DPO.',
-      archivistId: 'u7',
-    },
-    r6: {
-      dateReceived: '2026-07-10',
-      dateReleased: '2026-07-10',
-      borrowerName: 'Ana Villanueva',
-      expectedReturnDate: '2026-07-10',
-      physicalConditionBeforeRelease: 'Good Condition',
-      storageLocation: 'Archive Bay 1 / ICT Box 04',
-      releaseRemarks: 'Released and returned same day.',
-      archivistId: 'u7',
-    },
-  }));
-  const [closures, setClosures] = useState(() => loadStoredValue(closuresStorageKey, {
-    r6: {
-      dateReturned: '2026-07-10',
-      conditionUponReturn: 'Complete',
-      isComplete: true,
-      hasDamage: false,
-      hasMarkings: false,
-      missingPages: false,
-      refiledLocation: 'Archive Bay 1 / ICT Box 04',
-      closedBy: 'u7',
-      closedAt: '2026-07-10 16:45',
-      closureRemarks: 'Verified complete and refiled.',
-    },
-  }));
-  const [incidents, setIncidents] = useState(() => loadStoredValue(incidentsStorageKey, [
-    {
-      id: 'i1',
-      requestId: 'r1',
-      reportedBy: 'u7',
-      incidentType: 'Overdue',
-      incidentDescription: 'Physical ledger was not returned by the expected date during follow-up.',
-      actionTaken: 'Requestor notified; branch head copied for monitoring.',
-      status: 'Open',
-      createdAt: '2026-07-10 10:15',
-    },
-  ]));
-  const [auditLogs, setAuditLogs] = useState(() => loadStoredValue(auditLogsStorageKey, [
-    { id: 'a1', requestId: 'r1', userId: 'u2', action: 'Approved and forwarded', oldStatus: 'Pending Approval', newStatus: 'Forwarded to Archivist', remarks: 'Business purpose validated.', createdAt: '2026-07-08 09:20' },
-    { id: 'a2', requestId: 'r3', userId: 'u5', action: 'Approved for controlled processing', oldStatus: 'Pending Approval', newStatus: 'Processing', remarks: 'Confidential material may be reviewed in records room only.', createdAt: '2026-07-10 08:40' },
-    { id: 'a3', requestId: 'r4', userId: 'u7', action: 'Released electronic access', oldStatus: 'Forwarded to Archivist', newStatus: 'Released', remarks: 'Read-only encrypted link issued.', createdAt: '2026-07-10 11:05' },
-    { id: 'a4', requestId: 'r6', userId: 'u7', action: 'Closure evaluated', oldStatus: 'Returned', newStatus: 'Closed', remarks: 'Folder complete and refiled.', createdAt: '2026-07-10 16:45' },
-  ]));
-  const currentUser = users.find((user) => user.id === currentUserId) || users[0];
+  const [requests, setRequests] = useState([]);
+  const [processing, setProcessing] = useState({});
+  const [closures, setClosures] = useState({});
+  const [settingsSnapshot, setSettingsSnapshot] = useState({ branches: [], departments: [], categories: [] });
+  const [incidents, setIncidents] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [authReady, setAuthReady] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
+  const manualLogoutRef = useRef(false);
+  const currentUser = users.find((user) => user.id === currentUserId) || null;
   const setPath = useCallback((nextPath, options = {}) => {
     setPathState((currentPath) => {
       const resolvedPath = typeof nextPath === 'function' ? nextPath(currentPath) : nextPath;
@@ -440,28 +303,125 @@ function App() {
   }, [path]);
 
   useEffect(() => {
-    saveStoredValue(usersStorageKey, users);
-  }, [users]);
+    let cancelled = false;
+    let subscription;
+
+    const applyLoadedData = async (data) => {
+      if (cancelled) return;
+      setUsers(normalizeLoadedUsers(data.users || []));
+      setRequests(data.requests || []);
+      setProcessing(data.processing || {});
+      setClosures(data.closures || {});
+      setIncidents(data.incidents || []);
+      setAuditLogs(data.auditLogs || []);
+      setSettingsSnapshot(normalizeLoadedSettings(data.settings || {
+        branches: data.branches,
+        departments: data.departments,
+        categories: data.categories,
+      }));
+      setIsHydrated(true);
+      setAuthReady(true);
+    };
+
+    const init = async () => {
+      if (!supabase) {
+        setAuthReady(true);
+        setIsHydrated(true);
+        return;
+      }
+      const { user } = await getCurrentSessionUser();
+      if (cancelled) return;
+      if (user?.id) setCurrentUserId(user.id);
+      if (!user?.id) {
+        setAuthReady(true);
+        setIsHydrated(true);
+        return;
+      }
+      const databaseState = await loadSupabaseAppData().catch(() => null);
+      if (cancelled) return;
+      const nextState = databaseState || buildFallbackSnapshot(user);
+      const mergedState = {
+        ...nextState,
+        users: mergeLoadedUsers(databaseState?.users || nextState.users || []),
+        branches: Array.isArray(databaseState?.branches) ? databaseState.branches : [],
+        departments: Array.isArray(databaseState?.departments) ? databaseState.departments : [],
+        categories: Array.isArray(databaseState?.categories) ? databaseState.categories : [],
+      };
+      await applyLoadedData(mergedState);
+    };
+
+    init();
+
+    if (supabase?.auth?.onAuthStateChange) {
+      const { data } = supabase.auth.onAuthStateChange(async (_event, session) => {
+        if (cancelled) return;
+        if (session?.user?.id) {
+          manualLogoutRef.current = false;
+          setCurrentUserId(session.user.id);
+          const databaseState = await loadSupabaseAppData().catch(() => null);
+          if (cancelled) return;
+          const nextState = databaseState || buildFallbackSnapshot(session.user);
+          const mergedState = {
+            ...nextState,
+            users: mergeLoadedUsers(databaseState?.users || nextState.users || []),
+            branches: Array.isArray(databaseState?.branches) ? databaseState.branches : [],
+            departments: Array.isArray(databaseState?.departments) ? databaseState.departments : [],
+            categories: Array.isArray(databaseState?.categories) ? databaseState.categories : [],
+          };
+          await applyLoadedData(mergedState);
+          return;
+        }
+        if (!manualLogoutRef.current) {
+          return;
+        }
+        manualLogoutRef.current = false;
+        setCurrentUserId('');
+        setUsers([]);
+        setRequests([]);
+        setProcessing({});
+        setClosures({});
+        setIncidents([]);
+        setAuditLogs([]);
+        setSettingsSnapshot({ branches: [], departments: [], categories: [] });
+        setAuthReady(true);
+        setIsHydrated(true);
+      });
+      subscription = data.subscription;
+    }
+
+    return () => {
+      cancelled = true;
+      subscription?.unsubscribe?.();
+    };
+  }, []);
 
   useEffect(() => {
-    saveStoredValue(requestsStorageKey, requests);
-  }, [requests]);
+    if (!isHydrated || !supabase || !currentUserId) return undefined;
 
-  useEffect(() => {
-    saveStoredValue(processingStorageKey, processing);
-  }, [processing]);
+    const refreshRequestsFromDatabase = async () => {
+      const databaseState = await loadSupabaseAppData().catch(() => null);
+      if (!databaseState) return;
+      setRequests(databaseState.requests || []);
+      setProcessing(databaseState.processing || {});
+      setClosures(databaseState.closures || {});
+      setIncidents(databaseState.incidents || []);
+      setAuditLogs(databaseState.auditLogs || []);
+      if (currentUser?.role && superAdminRoles.includes(currentUser.role)) {
+        setUsers(normalizeLoadedUsers(databaseState.users || []));
+      }
+    };
 
-  useEffect(() => {
-    saveStoredValue(closuresStorageKey, closures);
-  }, [closures]);
+    const channel = supabase
+      .channel(`document_requests_realtime_${currentUserId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'document_requests' }, () => {
+        void refreshRequestsFromDatabase();
+      })
+      .subscribe();
 
-  useEffect(() => {
-    saveStoredValue(incidentsStorageKey, incidents);
-  }, [incidents]);
-
-  useEffect(() => {
-    saveStoredValue(auditLogsStorageKey, auditLogs);
-  }, [auditLogs]);
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [isHydrated, currentUserId, currentUser?.role]);
 
   useEffect(() => {
     document.body.classList.toggle('dark', theme === 'dark');
@@ -474,35 +434,92 @@ function App() {
     };
   }, [theme, setPath, goBack]);
 
-  const addAuditLog = (requestId, action, oldStatus, newStatus, remarks = '') => {
-    setAuditLogs((logs) => [
-      { id: crypto.randomUUID(), requestId, userId: currentUser.id, action, oldStatus, newStatus, remarks, createdAt: new Date().toLocaleString() },
-      ...logs,
-    ]);
+  const addAuditLog = async (requestId, action, oldStatus, newStatus, remarks = '') => {
+    if (!currentUser) return;
+    const entry = { id: crypto.randomUUID(), requestId, userId: currentUser.id, userName: currentUser.name, action, oldStatus, newStatus, remarks, createdAt: new Date().toLocaleString() };
+    setAuditLogs((logs) => [entry, ...logs]);
+    if (supabaseConfig.isConfigured && supabase) {
+      const { error } = await saveAuditLogRecord(entry);
+      if (error) console.error('Failed to save audit log:', error);
+    }
   };
 
-  const updateRequestStatus = (requestId, newStatus, action, remarks = '', patch = {}) => {
-    setRequests((items) => items.map((item) => {
-      if (item.id !== requestId) return item;
-      addAuditLog(requestId, action, item.status, newStatus, remarks);
-      return { ...item, ...patch, status: newStatus };
-    }));
+  const resolveApproverForRequest = async (requestorRole, branch, confidentialityLevel) => {
+    if (supabaseConfig.isConfigured && supabase) {
+      const { data, error } = await resolveRequestApprover({
+        requestorRole,
+        branch,
+        confidentialityLevel,
+      });
+      if (!error && data?.approver_id) {
+        return {
+          approverId: data.approver_id,
+          approverName: data.approver_name || getUserNameById(users, data.approver_id),
+        };
+      }
+    }
+
+    const fallbackApproverId = determineApprover(currentUser, { branch, confidentialityLevel }, users);
+    return {
+      approverId: fallbackApproverId,
+      approverName: getUserNameById(users, fallbackApproverId),
+    };
   };
 
-  const submitRequest = (form, requestId = null) => {
+  const updateRequestStatus = async (requestId, newStatus, action, remarks = '', patch = {}) => {
+    const target = requests.find((item) => item.id === requestId);
+    if (!target) return false;
+    const nextItem = { ...target, ...patch, status: newStatus };
+    if (supabaseConfig.isConfigured && supabase) {
+      const { error } = await saveRequestRecord(nextItem);
+      if (error) {
+        console.error('Failed to save request status:', error);
+        return false;
+      }
+    }
+    setRequests((items) => items.map((item) => (item.id === requestId ? nextItem : item)));
+    void addAuditLog(requestId, action, target.status, newStatus, remarks);
+    return true;
+  };
+
+  const submitRequest = async (form, requestId = null) => {
     const validationErrors = validateRequestForm(form);
     if (validationErrors.length) return validationErrors;
 
+    const { approverId, approverName } = await resolveApproverForRequest(currentUser.role, currentUser.branch, form.confidentialityLevel);
+
     if (requestId) {
-      const approver = determineApprover(currentUser, { ...form, branch: currentUser.branch }, users);
-      setRequests((items) => items.map((item) => (item.id === requestId ? { ...item, ...form, requestorId: currentUser.id, requestorName: currentUser.name, branch: currentUser.branch, department: form.department || currentUser.department, position: currentUser.position, status: 'Pending Approval', currentApprover: approver, assignedArchivistId: '' } : item)));
-      setAuditLogs((logs) => [{ id: crypto.randomUUID(), requestId, userId: currentUser.id, action: 'Updated request', oldStatus: 'Updated', newStatus: 'Pending Approval', remarks: form.purpose, createdAt: new Date().toLocaleString() }, ...logs]);
+      const target = requests.find((item) => item.id === requestId);
+      const nextItem = target ? {
+        ...target,
+        ...form,
+        requestorId: currentUser.id,
+        requestorName: currentUser.name,
+        branch: currentUser.branch,
+        department: form.department || currentUser.department,
+        position: currentUser.position,
+        status: 'Pending Approval',
+        currentApprover: approverId,
+        currentApproverName: approverName,
+        assignedArchivistId: '',
+        assignedArchivistName: '',
+      } : null;
+      if (nextItem && supabaseConfig.isConfigured && supabase) {
+        const { error } = await saveRequestRecord(nextItem);
+        if (error) {
+          console.error('Failed to save updated request:', error);
+          return [readErrorMessage(error, 'Save request failed.')];
+        }
+      }
+      if (nextItem) {
+        setRequests((items) => items.map((item) => (item.id === requestId ? nextItem : item)));
+      }
+      void addAuditLog(requestId, 'Updated request', 'Updated', 'Pending Approval', form.purpose);
       setEditingRequestId(null);
       setPath(`/requests/${requestId}`);
       return [];
     }
 
-    const approver = determineApprover(currentUser, form, users);
     const next = {
       ...form,
       id: crypto.randomUUID(),
@@ -513,17 +530,28 @@ function App() {
       branch: currentUser.branch,
       department: form.department || currentUser.department,
       position: currentUser.position,
-      currentApprover: approver,
+      currentApprover: approverId,
+      currentApproverName: approverName,
       assignedArchivistId: '',
+      assignedArchivistName: '',
       status: 'Pending Approval',
     };
+    if (supabaseConfig.isConfigured && supabase) {
+      const { error } = await createRequestRecord(next);
+      if (error) {
+        console.error('Failed to save request:', error);
+        return [readErrorMessage(error, 'Submit request failed.')];
+      }
+    }
     setRequests((items) => [next, ...items]);
-    setAuditLogs((logs) => [{ id: crypto.randomUUID(), requestId: next.id, userId: currentUser.id, action: 'Submitted request', oldStatus: 'Draft', newStatus: 'Pending Approval', remarks: next.purpose, createdAt: new Date().toLocaleString() }, ...logs]);
+    void addAuditLog(next.id, 'Submitted request', 'Draft', 'Pending Approval', next.purpose);
     setPath(`/requests/${next.id}`);
     return [];
   };
 
-  const saveDraftRequest = (form, requestId = null) => {
+  const saveDraftRequest = async (form, requestId = null) => {
+    if (!currentUser) return ['No active user session.'];
+    const { approverId, approverName } = await resolveApproverForRequest(currentUser.role, currentUser.branch, form.confidentialityLevel);
     const draftPayload = {
       ...form,
       requestorId: currentUser.id,
@@ -531,14 +559,25 @@ function App() {
       branch: currentUser.branch,
       department: form.department || currentUser.department,
       position: currentUser.position,
-      currentApprover: determineApprover(currentUser, { ...form, branch: currentUser.branch }, users),
+      currentApprover: approverId,
+      currentApproverName: approverName,
       assignedArchivistId: '',
+      assignedArchivistName: '',
       status: 'Draft',
     };
 
     if (requestId) {
-      setRequests((items) => items.map((item) => (item.id === requestId ? { ...item, ...draftPayload } : item)));
-      setAuditLogs((logs) => [{ id: crypto.randomUUID(), requestId, userId: currentUser.id, action: 'Saved draft', oldStatus: 'Draft', newStatus: 'Draft', remarks: form.purpose || 'Draft saved', createdAt: new Date().toLocaleString() }, ...logs]);
+      const target = requests.find((item) => item.id === requestId);
+      const nextItem = target ? { ...target, ...draftPayload } : null;
+      if (nextItem && supabaseConfig.isConfigured && supabase) {
+        const { error } = await saveRequestRecord(nextItem);
+        if (error) {
+          console.error('Failed to save draft request:', error);
+          return [readErrorMessage(error, 'Save draft failed.')];
+        }
+      }
+      if (nextItem) setRequests((items) => items.map((item) => (item.id === requestId ? nextItem : item)));
+      void addAuditLog(requestId, 'Saved draft', 'Draft', 'Draft', form.purpose || 'Draft saved');
       setEditingRequestId(null);
       setPath('/requests/my');
       return [];
@@ -550,42 +589,78 @@ function App() {
       requestNo: generateRequestNo(requests),
       requestDate: today(),
     };
+    if (supabaseConfig.isConfigured && supabase) {
+      const { error } = await createRequestRecord(next);
+      if (error) {
+        console.error('Failed to save draft request:', error);
+        return [readErrorMessage(error, 'Save draft failed.')];
+      }
+    }
     setRequests((items) => [next, ...items]);
-    setAuditLogs((logs) => [{ id: crypto.randomUUID(), requestId: next.id, userId: currentUser.id, action: 'Saved draft', oldStatus: 'Draft', newStatus: 'Draft', remarks: next.purpose || 'Draft saved', createdAt: new Date().toLocaleString() }, ...logs]);
+    void addAuditLog(next.id, 'Saved draft', 'Draft', 'Draft', next.purpose || 'Draft saved');
     setPath('/requests/my');
     return [];
   };
 
-  const withdrawRequest = (requestId) => {
+  const withdrawRequest = async (requestId) => {
     const target = requests.find((item) => item.id === requestId);
     if (!target || !['Draft', 'Pending Approval'].includes(target.status)) return;
-    updateRequestStatus(requestId, 'Draft', 'Returned to draft by requestor', target.documentTitle || 'Request kept for audit trail');
+    await updateRequestStatus(requestId, 'Draft', 'Returned to draft by requestor', target.documentTitle || 'Request kept for audit trail');
     setEditingRequestId(null);
     setPath('/requests/my');
   };
 
-  const deleteOwnRequest = (requestId) => {
+  const deleteOwnRequest = async (requestId) => {
     const target = requests.find((item) => item.id === requestId);
     if (!target || target.requestorId !== currentUser.id) return;
+    if (supabaseConfig.isConfigured && supabase) {
+      const { error } = await deleteRequestRecord(requestId);
+      if (error) {
+        console.error('Failed to delete request:', error);
+        return;
+      }
+    }
     setRequests((items) => items.filter((item) => item.id !== requestId));
     setProcessing((records) => Object.fromEntries(Object.entries(records).filter(([id]) => id !== requestId)));
     setClosures((records) => Object.fromEntries(Object.entries(records).filter(([id]) => id !== requestId)));
     setIncidents((items) => items.filter((item) => item.requestId !== requestId));
-    setAuditLogs((logs) => [{ id: crypto.randomUUID(), requestId, userId: currentUser.id, action: 'Deleted own request', oldStatus: target.status, newStatus: 'Deleted', remarks: target.documentTitle, createdAt: new Date().toLocaleString() }, ...logs.filter((log) => log.requestId !== requestId)]);
+    void addAuditLog(requestId, 'Deleted own request', target.status, 'Deleted', target.documentTitle);
     if (editingRequestId === requestId) setEditingRequestId(null);
     setPath('/requests/my');
   };
 
-  const updateCurrentUserProfile = (patch) => {
+  const updateCurrentUserProfile = async (patch) => {
     const email = patch.email.trim().toLowerCase();
     if (!email) return ['Email is required.'];
-    if (patch.password && patch.password.length < 6) return ['Password must be at least 6 characters.'];
     if (users.some((user) => user.id !== currentUser.id && user.email.toLowerCase() === email)) return ['Email is already used by another account.'];
+
+    const name = patch.name?.trim();
+    if (!name) return ['Full name is required.'];
+
+    const avatar = patch.avatarCustom ? patch.avatar : getAvatarUrl(name);
+    const nextProfile = {
+      full_name: name,
+      email,
+      avatar_url: avatar,
+    };
+
+    if (supabaseConfig.isConfigured && supabase) {
+      const { error } = await updateOwnProfile({
+        userId: currentUser.id,
+        profile: nextProfile,
+      });
+      if (error) return [readErrorMessage(error, 'Update profile failed.')];
+    }
+
     setUsers((items) => items.map((user) => {
       if (user.id !== currentUser.id) return user;
-      const generatedAvatar = getAvatarUrl(patch.name || user.name, patch.gender || user.gender);
-      const avatar = patch.avatarCustom ? patch.avatar : generatedAvatar;
-      return { ...user, ...patch, email, avatar, avatarCustom: Boolean(patch.avatarCustom) };
+      return {
+        ...user,
+        name,
+        email,
+        avatar,
+        avatarCustom: Boolean(patch.avatarCustom),
+      };
     }));
     return [];
   };
@@ -597,19 +672,46 @@ function App() {
 
   const route = path.split('/').filter(Boolean);
   const selectedRequest = requests.find((request) => request.id === route[1] || request.id === route[0]);
-  const allowedPath = isPathAllowed(path, currentUser.role);
+  const allowedPath = currentUser ? isPathAllowed(path, currentUser.role) : false;
 
-  if (path === '/login') {
-    return <Login users={users} currentUserId={currentUserId} onLogin={(id) => { setCurrentUserId(id); setPath('/dashboard', { replace: true }); }} />;
+  if (!authReady || !currentUser || path === '/login') {
+    return (
+      <Login
+        isConfigured={supabaseConfig.isConfigured}
+        onLogin={async (email, password) => {
+          if (!supabase) return ['Supabase is not configured.'];
+          const { error, data } = await signInWithEmailPassword(email, password);
+          if (error) return [readErrorMessage(error, 'Login failed.')];
+          if (data?.user?.id) {
+            const { data: profileData } = await supabase
+              .from('profiles')
+              .select('status')
+              .eq('id', data.user.id)
+              .maybeSingle();
+            if (profileData?.status === 'Inactive') {
+              await supabaseSignOut();
+              return ['This account is inactive. Please contact the super admin.'];
+            }
+            setCurrentUserId(data.user.id);
+            setUsers((items) => {
+              const nextUser = mapAuthUserToProfile(data.user);
+              return items.some((item) => item.id === nextUser.id) ? items.map((item) => (item.id === nextUser.id ? { ...item, ...nextUser } : item)) : [nextUser, ...items];
+            });
+          }
+          setPath('/dashboard', { replace: true });
+          return [];
+        }}
+      />
+    );
   }
 
-  const pageProps = { currentUser, users, requests: visibleRequests, rawRequests: requests, processing, closures, incidents, auditLogs, setPath, submitRequest, updateRequestStatus, addAuditLog, setProcessing, setClosures, setIncidents, editingRequestId, setEditingRequestId };
+  const pageProps = { currentUser, users, requests: visibleRequests, rawRequests: requests, processing, closures, incidents, auditLogs, setPath, submitRequest, updateRequestStatus, addAuditLog, setProcessing, setClosures, setIncidents, editingRequestId, setEditingRequestId, settingsSnapshot, departmentsList: settingsSnapshot.departments || departments };
 
   return (
     <div className={`app-shell ${theme} ${isMobileMenuOpen ? 'menu-open' : ''}`}>
-      <Sidebar user={currentUser} users={users} setCurrentUserId={setCurrentUserId} path={path} setPath={setPath} isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
+      <Sidebar user={currentUser} path={path} setPath={setPath} isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
       <main className="workspace">
-        <Header user={currentUser} users={users} setCurrentUserId={setCurrentUserId} onLogout={() => setPath('/login')} onUpdateProfile={updateCurrentUserProfile} theme={theme} setTheme={setTheme} isMobileMenuOpen={isMobileMenuOpen} onMenuToggle={() => setIsMobileMenuOpen((isOpen) => !isOpen)} />
+        <Header user={currentUser} onLogout={async () => { manualLogoutRef.current = true; await supabaseSignOut(); setCurrentUserId(''); setPath('/login', { replace: true }); }} onUpdateProfile={updateCurrentUserProfile} theme={theme} setTheme={setTheme} isMobileMenuOpen={isMobileMenuOpen} onMenuToggle={() => setIsMobileMenuOpen((isOpen) => !isOpen)} />
         {!allowedPath && <RoleDenied setPath={setPath} />}
         {allowedPath && path === '/dashboard' && <Dashboard {...pageProps} />}
         {allowedPath && path === '/requests/new' && <NewRequest {...pageProps} editingRequestId={editingRequestId} setEditingRequestId={setEditingRequestId} saveDraftRequest={saveDraftRequest} />}
@@ -622,9 +724,9 @@ function App() {
         {allowedPath && route[0] === 'archivist' && route[2] === 'process' && <ArchivistProcess request={requests.find((request) => request.id === route[1])} {...pageProps} />}
         {allowedPath && path === '/incidents' && <Incidents {...pageProps} />}
         {allowedPath && path === '/incidents/new' && <NewIncident {...pageProps} />}
-        {allowedPath && path === '/reports' && <Reports {...pageProps} />}
-        {allowedPath && path === '/users' && <Users users={users} setUsers={setUsers} currentUserId={currentUser.id} />}
-        {allowedPath && path === '/settings' && <Settings theme={theme} setTheme={setTheme} />}
+        {allowedPath && path === '/reports' && <Reports {...pageProps} branchesList={settingsSnapshot.branches || branches} departmentsList={settingsSnapshot.departments || departments} />}
+        {allowedPath && path === '/users' && <Users users={users} setUsers={setUsers} currentUserId={currentUser.id} currentUser={currentUser} branchesList={settingsSnapshot.branches || branches} departmentsList={settingsSnapshot.departments || departments} />}
+        {allowedPath && path === '/settings' && <Settings theme={theme} setTheme={setTheme} initialSettings={settingsSnapshot} onSettingsChange={setSettingsSnapshot} />}
         {allowedPath && path === '/audit-logs' && <AuditLogsPage logs={auditLogs} users={users} requests={requests} setPath={setPath} />}
       </main>
     </div>
@@ -665,17 +767,17 @@ function ThemeIcon({ theme }) {
   return <svg {...commonProps} aria-hidden="true"><circle cx="12" cy="12" r="4.5" /><path d="M12 2.5v2" /><path d="M12 19.5v2" /><path d="M4.5 12h-2" /><path d="M21.5 12h-2" /><path d="m5.6 5.6-1.4-1.4" /><path d="m19.8 19.8-1.4-1.4" /><path d="m18.4 5.6 1.4-1.4" /><path d="m4.2 19.8 1.4-1.4" /></svg>;
 }
 
-function Sidebar({ user, users, setCurrentUserId, path, setPath, isOpen, onClose }) {
+function Sidebar({ user, path, setPath, isOpen, onClose }) {
   const items = [
-    ['Dashboard', '/dashboard', ['requestor', 'branch_head', 'department_head', 'dpo', 'ceo', 'archivist', 'admin'], 'dashboard'],
-    ['Approval Queue', '/approvals', ['branch_head', 'department_head', 'dpo', 'ceo', 'admin'], 'approval'],
-    ['Archivist Queue', '/archivist', ['archivist', 'admin'], 'archive'],
-    ['All Requests', '/requests/all', ['admin', 'superadmin', 'ceo', 'dpo'], 'request'],
-    ['Incidents', '/incidents', ['archivist', 'admin', 'dpo', 'ceo'], 'alert'],
-    ['Reports', '/reports', ['branch_head', 'department_head', 'dpo', 'ceo', 'archivist', 'admin'], 'reports'],
-    ['Users', '/users', ['admin', 'superadmin'], 'users'],
-    ['Settings', '/settings', ['admin', 'superadmin'], 'settings'],
-    ['Audit Logs', '/audit-logs', ['admin', 'superadmin'], 'audit'],
+    ['Dashboard', '/dashboard', ['requestor', 'branch_head', 'department_head', 'dpo', 'ceo', 'archivist', ...superAdminRoles], 'dashboard'],
+    ['Approval Queue', '/approvals', ['branch_head', 'department_head', 'dpo', 'ceo', ...superAdminRoles], 'approval'],
+    ['Archivist Queue', '/archivist', ['archivist', ...superAdminRoles], 'archive'],
+    ['All Requests', '/requests/all', superAdminRoles, 'request'],
+    ['Incidents', '/incidents', ['archivist', 'dpo', 'ceo', ...superAdminRoles], 'alert'],
+    ['Reports', '/reports', ['branch_head', 'department_head', 'dpo', 'ceo', 'archivist', ...superAdminRoles], 'reports'],
+    ['Users', '/users', superAdminRoles, 'users'],
+    ['Settings', '/settings', superAdminRoles, 'settings'],
+    ['Audit Logs', '/audit-logs', superAdminRoles, 'audit'],
     ['New Request', '/requests/new', ['requestor', 'branch_head', 'department_head'], 'request'],
     ['My Requests', '/requests/my', ['requestor', 'branch_head', 'department_head'], 'request'],
   ];
@@ -688,35 +790,23 @@ function Sidebar({ user, users, setCurrentUserId, path, setPath, isOpen, onClose
         <div><span>BMPC</span><small>Document Retrieval</small></div>
       </div>
       <nav>{items.filter(([, , allowed]) => allowed.includes(user.role)).map(([label, href, , icon]) => <button className={path === href ? 'active' : ''} key={href} onClick={() => { setPath(href); onClose(); }}><span className="nav-icon" aria-hidden="true"><SidebarIcon name={icon} /></span><span>{label}</span></button>)}</nav>
-      <section className="sidebar-user-switcher" aria-label="Open user account">
-        <h3>User Accounts</h3>
-        {users.map((item) => (
-          <button className={item.id === user.id ? 'active-user' : ''} type="button" key={item.id} onClick={() => { setCurrentUserId(item.id); setPath('/dashboard', { replace: true }); onClose(); }}>
-            <img className="avatar-image mini" src={item.avatar || getAvatarUrl(item.name, item.gender)} alt={item.name} />
-            <span>
-              <strong>{item.name}</strong>
-              <small>{roles[item.role]}</small>
-            </span>
-          </button>
-        ))}
-      </section>
       </aside>
     </>
   );
 }
 
-function Header({ user, users, setCurrentUserId, onLogout, onUpdateProfile, theme, setTheme, isMobileMenuOpen, onMenuToggle }) {
+function Header({ user, onLogout, onUpdateProfile, theme, setTheme, isMobileMenuOpen, onMenuToggle }) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [profileDraft, setProfileDraft] = useState({ name: user.name, email: user.email, password: user.password || '', gender: user.gender, avatar: user.avatarCustom ? user.avatar : '', avatarCustom: Boolean(user.avatarCustom) });
+  const [profileDraft, setProfileDraft] = useState({ name: user.name, email: user.email, avatar: user.avatarCustom ? user.avatar : '', avatarCustom: Boolean(user.avatarCustom) });
   const [profileErrors, setProfileErrors] = useState([]);
 
   useEffect(() => {
-    setProfileDraft({ name: user.name, email: user.email, password: user.password || '', gender: user.gender, avatar: user.avatarCustom ? user.avatar : '', avatarCustom: Boolean(user.avatarCustom) });
+    setProfileDraft({ name: user.name, email: user.email, avatar: user.avatarCustom ? user.avatar : '', avatarCustom: Boolean(user.avatarCustom) });
     setProfileErrors([]);
   }, [user]);
 
-  const currentAvatar = profileDraft.avatar || getAvatarUrl(profileDraft.name, profileDraft.gender);
+  const currentAvatar = profileDraft.avatar || getAvatarUrl(profileDraft.name);
   const notifications = [
     {
       id: 'n1',
@@ -735,14 +825,13 @@ function Header({ user, users, setCurrentUserId, onLogout, onUpdateProfile, them
     const reader = new FileReader();
     reader.onload = () => {
       setProfileDraft((draft) => ({ ...draft, avatar: reader.result, avatarCustom: true }));
-      onUpdateProfile({ ...profileDraft, avatar: reader.result, avatarCustom: true });
       setProfileErrors([]);
     };
     reader.readAsDataURL(file);
   };
 
-  const saveProfile = () => {
-    const errors = onUpdateProfile(profileDraft);
+  const saveProfile = async () => {
+    const errors = await onUpdateProfile(profileDraft);
     setProfileErrors(errors);
     if (!errors.length) setIsProfileOpen(false);
   };
@@ -759,13 +848,12 @@ function Header({ user, users, setCurrentUserId, onLogout, onUpdateProfile, them
       </div>
       <div className="profile-tools">
         <button className="user-chip" type="button" onClick={() => setIsProfileOpen(true)} aria-label="Edit profile">
-          <img className="avatar-image compact" src={user.avatar || getAvatarUrl(user.name, user.gender)} alt={user.name} />
+          <img className="avatar-image compact" src={user.avatar || getAvatarUrl(user.name)} alt={user.name} />
           <div>
             <strong>{user.name}</strong>
             <span>{roles[user.role]} / {user.department}</span>
           </div>
         </button>
-        <select className="role-switch" aria-label="Switch user account" value={user.id} onChange={(event) => setCurrentUserId(event.target.value)}>{users.map((item) => <option value={item.id} key={item.id}>{item.name} - {roles[item.role]}</option>)}</select>
         <div className="notification-wrap">
           <button type="button" className="topbar-icon-button" aria-label="Notifications" aria-expanded={isNotificationsOpen} onClick={() => setIsNotificationsOpen((isOpen) => !isOpen)}>
             <span className="notification-dot">{notifications.length}</span>
@@ -815,24 +903,33 @@ function Header({ user, users, setCurrentUserId, onLogout, onUpdateProfile, them
   );
 }
 
-function Login({ users, currentUserId, onLogin }) {
+function Login({ isConfigured, onLogin }) {
   const [errors, setErrors] = useState([]);
-  const [showLoginPassword, setShowLoginPassword] = useState(false);
-  const selectedUser = users.find((user) => user.id === currentUserId) || users[0];
-  const [loginForm, setLoginForm] = useState({ email: selectedUser?.email || '', password: selectedUser?.password || '' });
-  useEffect(() => {
-    setLoginForm({ email: selectedUser?.email || '', password: selectedUser?.password || '' });
-  }, [selectedUser]);
+  const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const updateLogin = (key, value) => setLoginForm((draft) => ({ ...draft, [key]: value }));
-  const submitLogin = () => {
+  const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+  const submitLogin = async () => {
     const email = loginForm.email.trim().toLowerCase();
-    const matchedUser = users.find((user) => user.email.toLowerCase() === email && user.password === loginForm.password);
-    if (!matchedUser) {
-      setErrors(['Email or password is incorrect.']);
+    const nextErrors = [];
+    if (!email) nextErrors.push('Email is required.');
+    else if (!isValidEmail(email)) nextErrors.push('Please enter a valid email address.');
+    if (!loginForm.password.trim()) nextErrors.push('Password is required.');
+    if (nextErrors.length) {
+      setErrors(nextErrors);
       return;
     }
-    setErrors([]);
-    onLogin(matchedUser.id);
+
+    setIsSubmitting(true);
+    try {
+      const result = await onLogin(email, loginForm.password);
+      setErrors(Array.isArray(result) ? result : []);
+    } catch (error) {
+      setErrors([readErrorMessage(error, 'Login failed.')]);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
   return (
     <main className="login-page">
@@ -843,12 +940,16 @@ function Login({ users, currentUserId, onLogin }) {
         <img src="/bmpc-logo.png" alt="Barbaza Multi-Purpose Cooperative logo" />
         <h1>BMPC Document Retrieval</h1>
         <p>Controlled archive request, approval, release, return, and audit monitoring for Barbaza Multi-Purpose Cooperative.</p>
+        {!isConfigured && <div className="alert">Supabase is not configured yet. Set the environment variables before using authentication.</div>}
         {errors.length > 0 && <AlertList items={errors} />}
         <label>Email</label>
         <input value={loginForm.email} onChange={(event) => updateLogin('email', event.target.value)} />
         <label>Password</label>
-        <PasswordInput value={loginForm.password} onChange={(value) => updateLogin('password', value)} isVisible={showLoginPassword} onToggle={() => setShowLoginPassword((isVisible) => !isVisible)} />
-        <button onClick={submitLogin}>Login</button>
+        <PasswordInput value={loginForm.password} onChange={(value) => updateLogin('password', value)} isVisible={showPassword} onToggle={() => setShowPassword((isVisible) => !isVisible)} />
+        <button type="button" className="submit-button" onClick={submitLogin} disabled={isSubmitting}>
+          {isSubmitting && <span className="button-spinner" aria-hidden="true"></span>}
+          <span>{isSubmitting ? 'Logging in...' : 'Login'}</span>
+        </button>
       </section>
     </main>
   );
@@ -881,7 +982,9 @@ function DashboardIcon({ name }) {
 
 function Dashboard({ currentUser, requests, processing, incidents, setPath }) {
   const [selectedTrendDate, setSelectedTrendDate] = useState('');
-  const my = adminRoles.includes(currentUser.role) ? requests : requests.filter((request) => request.requestorId === currentUser.id || request.currentApprover === currentUser.id || request.assignedArchivistId === currentUser.id || ['ceo', 'dpo'].includes(currentUser.role));
+  const my = adminRoles.includes(currentUser.role) || currentUser.role === 'archivist'
+    ? requests
+    : requests.filter((request) => request.requestorId === currentUser.id || request.currentApprover === currentUser.id || request.assignedArchivistId === currentUser.id || ['ceo', 'dpo'].includes(currentUser.role));
   const pendingRequests = my.filter((request) => request.status === 'Pending Approval');
   const approvedRequests = my.filter((request) => ['Approved', 'Forwarded to Archivist'].includes(request.status));
   const releasedRequests = my.filter((request) => request.status === 'Released');
@@ -1072,12 +1175,16 @@ function PageTitle({ title, subtitle, onBack }) {
   return <div className="page-title"><button type="button" className="back-btn" onClick={handleBack} aria-label="Go back">&lt;</button><div><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div></div>;
 }
 
-function NewRequest({ currentUser, requests, submitRequest, saveDraftRequest, editingRequestId, setEditingRequestId }) {
+function NewRequest({ currentUser, requests, submitRequest, saveDraftRequest, editingRequestId, setEditingRequestId, departmentsList = [] }) {
   const initialForm = useMemo(() => ({ documentTitle: '', documentType: 'Physical', confidentialityLevel: 'Non Confidential', purpose: '', dateNeeded: today(), borrowReturnDueDate: today(), remarks: '', branch: currentUser.branch, department: currentUser.department, agreementAccepted: false }), [currentUser.branch, currentUser.department]);
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState([]);
   const [editingRequest, setEditingRequest] = useState(null);
   const update = (key, value) => setForm((draft) => ({ ...draft, [key]: value }));
+  const departmentOptions = useMemo(() => {
+    const values = Array.isArray(departmentsList) ? departmentsList : [];
+    return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))];
+  }, [departmentsList]);
   const canSubmit = form.documentTitle && form.documentType && form.purpose && form.dateNeeded && form.borrowReturnDueDate && form.confidentialityLevel && form.agreementAccepted;
   const hasReturnDateWarning = form.borrowReturnDueDate && (form.borrowReturnDueDate < today() || form.borrowReturnDueDate < form.dateNeeded);
 
@@ -1105,8 +1212,13 @@ function NewRequest({ currentUser, requests, submitRequest, saveDraftRequest, ed
     }
   }, [editingRequestId, initialForm, requests, currentUser.branch, currentUser.department]);
 
-  const save = () => {
-    const result = submitRequest(form, editingRequestId);
+  const save = async () => {
+    const result = await submitRequest(form, editingRequestId);
+    setErrors(result || []);
+  };
+
+  const saveDraft = async () => {
+    const result = await saveDraftRequest(form, editingRequestId);
     setErrors(result || []);
   };
 
@@ -1121,9 +1233,15 @@ function NewRequest({ currentUser, requests, submitRequest, saveDraftRequest, ed
       <div className="form-grid">
         <Field label="Request Date" type="date" value={today()} readOnly />
         <Field label="Requestor" value={currentUser.name} readOnly />
-        <Field label="Department" value={form.department} onChange={(v) => update('department', v)} readOnly={!adminRoles.includes(currentUser.role)} />
+        <label className="field">
+          <span>Department</span>
+          <select value={form.department} onChange={(e) => update('department', e.target.value)}>
+            {departmentOptions.length > 0 ? departmentOptions.map((option) => (
+              <option key={option} value={option}>{option}</option>
+            )) : <option value={form.department || currentUser.department}>{form.department || currentUser.department}</option>}
+          </select>
+        </label>
         <Field label="Branch" value={currentUser.branch} readOnly />
-        <Field label="Position" value={currentUser.position} readOnly />
         <Field label="Document Title / File Name" value={form.documentTitle} onChange={(v) => update('documentTitle', v)} />
         <Field label="Document Type" type="select" value={form.documentType} options={['Physical', 'Electronic']} onChange={(v) => update('documentType', v)} />
         <Field label="Confidentiality Level" type="select" value={form.confidentialityLevel} options={['Confidential', 'Non Confidential']} onChange={(v) => update('confidentialityLevel', v)} />
@@ -1134,8 +1252,8 @@ function NewRequest({ currentUser, requests, submitRequest, saveDraftRequest, ed
       </div>
       <label className="agreement"><input type="checkbox" checked={form.agreementAccepted} onChange={(e) => update('agreementAccepted', e.target.checked)} /> I certify that the requested document will be used strictly for the approved purpose only and returned, deleted, or access-revoked on or before the approved return due date.</label>
       <div className="actions">
-        <button type="button" className="ghost" onClick={() => { setErrors(saveDraftRequest(form, editingRequestId) || []); }}>{editingRequestId ? 'Save Draft' : 'Save Draft'}</button>
-        <button type="button" disabled={!canSubmit} onClick={save}>{editingRequestId ? 'Save and Resend' : 'Submit Request'}</button>
+        <button type="button" className="ghost" onClick={() => { void saveDraft(); }}>{editingRequestId ? 'Save Draft' : 'Save Draft'}</button>
+        <button type="button" disabled={!canSubmit} onClick={() => { void save(); }}>{editingRequestId ? 'Save and Resend' : 'Submit Request'}</button>
         {editingRequestId && <button className="ghost" type="button" onClick={() => { setEditingRequestId(null); }}>Cancel Edit</button>}
       </div>
       {editingRequest && editingRequest.status === 'Draft' && <div className="alert">This request is currently a draft. You can keep editing it until you submit it again.</div>}
@@ -1144,7 +1262,10 @@ function NewRequest({ currentUser, requests, submitRequest, saveDraftRequest, ed
 }
 
 function AlertList({ items }) {
-  return <div className="alert error-list">{items.map((item) => <div key={item}>{item}</div>)}</div>;
+  return <div className="alert error-list">{items.map((item, index) => {
+    const message = readErrorMessage(item, 'Unexpected error');
+    return <div key={typeof item === 'string' ? item : item?.message || index}>{message}</div>;
+  })}</div>;
 }
 function Field({ label, value, onChange, type = 'text', options = [], readOnly = false, className = '', min, warning = false, placeholder = '' }) {
   return <label className={`field ${className}`}><span>{label}{warning && <strong className="warning-mark" aria-hidden="true"> !</strong>}</span>{type === 'textarea' ? <textarea value={value} placeholder={placeholder} readOnly={readOnly} onChange={(e) => onChange?.(e.target.value)} /> : type === 'select' ? <select value={value} disabled={readOnly} onChange={(e) => onChange?.(e.target.value)}>{options.map((option) => <option key={option}>{option}</option>)}</select> : <input type={type} value={value} min={min} placeholder={placeholder} readOnly={readOnly} onChange={(e) => onChange?.(e.target.value)} />}</label>;
@@ -1165,7 +1286,7 @@ function RequestTable({ title, requests, setPath, showActions = false, onEditReq
 }
 function RequestDetails({ request, users, processing, closures, incidents, auditLogs, currentUser, setPath, setEditingRequestId }) {
   if (!request) return <Empty message="Request not found." />;
-  const approver = users.find((user) => user.id === request.currentApprover);
+  const approver = request.currentApproverName || users.find((user) => user.id === request.currentApprover)?.name;
   const requestProcessing = processing[request.id] || {};
   const closure = closures[request.id] || {};
   const requestIncidents = incidents.filter((incident) => incident.requestId === request.id);
@@ -1179,7 +1300,7 @@ function RequestDetails({ request, users, processing, closures, incidents, audit
   const canCreateIncident = ['archivist', ...adminRoles, 'dpo', 'ceo'].includes(currentUser.role);
   const canEditDraft = request.status === 'Draft' && request.requestorId === currentUser.id;
 
-  return <section className="page"><PageTitle title={request.requestNo} subtitle={request.documentTitle} /><div className="detail-grid"><InfoCard title="Request Information" items={[['Requestor', request.requestorName], ['Branch', request.branch], ['Department', request.department], ['Document Type', request.documentType], ['Confidentiality', request.confidentialityLevel], ['Purpose', request.purpose], ['Date Needed', request.dateNeeded], ['Return Due Date', request.borrowReturnDueDate], ['Current Approver', approver?.name || 'Not assigned'], ['Status', request.computedStatus || request.status]]} /><InfoCard title="Approval History" items={approvalLogs.length ? approvalLogs.map((log) => [log.createdAt, `${log.action}: ${log.remarks || log.newStatus}`]) : [['Status', 'No approval history yet']]} /><InfoCard title="Archivist Processing / Release" items={processingItems.length ? processingItems : [['Status', 'No processing record yet']]} /><InfoCard title="Return / Closure" items={Object.entries(closure).length ? Object.entries(closure) : [['Status', 'Not closed']]} /><InfoCard title="Incident Reports" items={requestIncidents.length ? requestIncidents.map((incident) => [incident.incidentType, incident.status]) : [['Status', 'No incidents']]} /></div><div className="actions">{canEditDraft && <button className="secondary" onClick={() => { setEditingRequestId(request.id); setPath('/requests/new'); }}>Edit Draft and Resend</button>}{canClose && <button onClick={() => setPath(`/requests/${request.id}/closure`)}>Return / Closure</button>}{canProcess && <button className="secondary" onClick={() => setPath(`/archivist/${request.id}/process`)}>Archivist Processing</button>}{canCreateIncident && <button className="ghost" onClick={() => setPath('/incidents/new')}>Create Incident</button>}</div><AuditTrailTable logs={auditLogs.filter((log) => log.requestId === request.id)} users={users} setPath={setPath} /></section>;
+  return <section className="page"><PageTitle title={request.requestNo} subtitle={request.documentTitle} /><div className="detail-grid"><InfoCard title="Request Information" items={[['Requestor', request.requestorName], ['Branch', request.branch], ['Department', request.department], ['Document Type', request.documentType], ['Confidentiality', request.confidentialityLevel], ['Purpose', request.purpose], ['Date Needed', request.dateNeeded], ['Return Due Date', request.borrowReturnDueDate], ['Current Approver', approver || 'Not assigned'], ['Status', request.computedStatus || request.status]]} /><InfoCard title="Approval History" items={approvalLogs.length ? approvalLogs.map((log) => [log.createdAt, `${log.action}: ${log.remarks || log.newStatus}`]) : [['Status', 'No approval history yet']]} /><InfoCard title="Archivist Processing / Release" items={processingItems.length ? processingItems : [['Status', 'No processing record yet']]} /><InfoCard title="Return / Closure" items={Object.entries(closure).length ? Object.entries(closure) : [['Status', 'Not closed']]} /><InfoCard title="Incident Reports" items={requestIncidents.length ? requestIncidents.map((incident) => [incident.incidentType, incident.status]) : [['Status', 'No incidents']]} /></div><div className="actions">{canEditDraft && <button className="secondary" onClick={() => { setEditingRequestId(request.id); setPath('/requests/new'); }}>Edit Draft and Resend</button>}{canClose && <button onClick={() => setPath(`/requests/${request.id}/closure`)}>Return / Closure</button>}{canProcess && <button className="secondary" onClick={() => setPath(`/archivist/${request.id}/process`)}>Archivist Processing</button>}{canCreateIncident && <button className="ghost" onClick={() => setPath('/incidents/new')}>Create Incident</button>}</div><AuditTrailTable logs={auditLogs.filter((log) => log.requestId === request.id)} users={users} setPath={setPath} /></section>;
 }
 function InfoCard({ title, items }) {
   return <article className="info-card"><h3>{title}</h3>{items.map(([key, value]) => {
@@ -1221,7 +1342,7 @@ function ApprovalQueue({ currentUser, requests, updateRequestStatus, users, setP
     return true;
   };
   const approve = (request) => {
-    updateRequestStatus(request.id, 'Forwarded to Archivist', 'Approved and forwarded', remarks || 'Approved', { currentApprover: '', assignedArchivistId: archivist?.id, approvedBy: currentUser.id, approvedAt: new Date().toLocaleString(), forwardedToArchivistAt: new Date().toLocaleString() });
+    updateRequestStatus(request.id, 'Forwarded to Archivist', 'Approved and forwarded', remarks || 'Approved', { currentApprover: '', currentApproverName: '', assignedArchivistId: archivist?.id || '', assignedArchivistName: archivist?.name || '', approvedBy: currentUser.id, approvedAt: new Date().toLocaleString(), forwardedToArchivistAt: new Date().toLocaleString() });
     setRemarks('');
   };
   const reject = (request) => {
@@ -1229,7 +1350,7 @@ function ApprovalQueue({ currentUser, requests, updateRequestStatus, users, setP
     updateRequestStatus(request.id, 'Rejected', 'Rejected request', remarks, { rejectedBy: currentUser.id, rejectedAt: new Date().toLocaleString(), rejectionReason: remarks });
     setRemarks('');
   };
-  return <section className="page"><PageTitle title="Approval Queue" subtitle="Requests appear here only for the assigned approver, except confidential requests also appear to Admin DPO/CEO." />{errors.length > 0 && <AlertList items={errors} />}<textarea className="remarks-box" placeholder="Remarks required for rejection; optional for approval" value={remarks} onChange={(e) => setRemarks(e.target.value)} /><div className="queue-list">{queue.map((request) => <article className="queue-card" key={request.id} onClick={() => setPath(`/requests/${request.id}`)}><div><h3>{request.documentTitle}</h3><p>{request.requestNo} by {request.requestorName}</p><p>Assigned approver: {users.find((user) => user.id === request.currentApprover)?.name || (request.confidentialityLevel === 'Confidential' ? 'Admin DPO / CEO' : 'Not assigned')}</p><p>Reminder: bring back or revoke access by {request.borrowReturnDueDate || 'the approved due date'}.</p><span className={statusClass(request.status)}>{request.status}</span></div><div className="actions" onClick={(event) => event.stopPropagation()}><button onClick={() => approve(request)}>Approve</button><button className="danger" onClick={() => reject(request)}>Reject</button></div></article>)}{!queue.length && <Empty message="No approval items." />}</div></section>;
+  return <section className="page"><PageTitle title="Approval Queue" subtitle="Requests appear here only for the assigned approver, except confidential requests also appear to Admin DPO/CEO." />{errors.length > 0 && <AlertList items={errors} />}<textarea className="remarks-box" placeholder="Remarks required for rejection; optional for approval" value={remarks} onChange={(e) => setRemarks(e.target.value)} /><div className="queue-list">{queue.map((request) => <article className="queue-card" key={request.id} onClick={() => setPath(`/requests/${request.id}`)}><div><h3>{request.documentTitle}</h3><p>{request.requestNo} by {request.requestorName}</p><p>Assigned approver: {request.currentApproverName || users.find((user) => user.id === request.currentApprover)?.name || (request.confidentialityLevel === 'Confidential' ? 'Admin DPO / CEO' : 'Not assigned')}</p><p>Reminder: bring back or revoke access by {request.borrowReturnDueDate || 'the approved due date'}.</p><span className={statusClass(request.status)}>{request.status}</span></div><div className="actions" onClick={(event) => event.stopPropagation()}><button onClick={() => approve(request)}>Approve</button><button className="danger" onClick={() => reject(request)}>Reject</button></div></article>)}{!queue.length && <Empty message="No approval items." />}</div></section>;
 }
 function ArchivistQueue({ requests, setPath }) {
   const queue = requests.filter((request) => ['Approved', 'Forwarded to Archivist', 'Processing'].includes(request.status));
@@ -1263,16 +1384,20 @@ function ArchivistProcess({ request, currentUser, processing, setProcessing, upd
   };
   const startProcessing = () => {
     if (isReleasedViewOnly) return;
-    setProcessing((records) => ({ ...records, [request.id]: { ...form, electronicReleaseReference: normalizeReleaseLink(form.electronicReleaseReference), archivistId: currentUser.id } }));
-    updateRequestStatus(request.id, 'Processing', 'Started archivist processing', 'Retrieval is being prepared.', { assignedArchivistId: currentUser.id });
+    const nextRecord = { ...form, electronicReleaseReference: normalizeReleaseLink(form.electronicReleaseReference), archivistId: currentUser.id, archivistName: currentUser.name };
+    setProcessing((records) => ({ ...records, [request.id]: nextRecord }));
+    void saveProcessingRecord(request.id, nextRecord).catch((error) => console.error('Failed to save processing record:', error));
+    updateRequestStatus(request.id, 'Processing', 'Started archivist processing', 'Retrieval is being prepared.', { assignedArchivistId: currentUser.id, assignedArchivistName: currentUser.name });
     setPath('/archivist');
   };
   const release = () => {
     if (isReleasedViewOnly) return;
     if (!validateRelease()) return;
     const electronicReleaseReference = normalizeReleaseLink(form.electronicReleaseReference);
-    setProcessing((records) => ({ ...records, [request.id]: { ...form, electronicReleaseReference, archivistId: currentUser.id } }));
-    updateRequestStatus(request.id, 'Released', 'Released document', form.releaseRemarks, { assignedArchivistId: currentUser.id });
+    const nextRecord = { ...form, electronicReleaseReference, archivistId: currentUser.id, archivistName: currentUser.name };
+    setProcessing((records) => ({ ...records, [request.id]: nextRecord }));
+    void saveProcessingRecord(request.id, nextRecord).catch((error) => console.error('Failed to save processing record:', error));
+    updateRequestStatus(request.id, 'Released', 'Released document', form.releaseRemarks, { assignedArchivistId: currentUser.id, assignedArchivistName: currentUser.name });
     setPath('/archivist');
   };
   return <section className="page"><PageTitle title="Archivist Processing" subtitle={`${request.requestNo} - ${request.documentType}`} />{errors.length > 0 && <AlertList items={errors} />}{isReleasedViewOnly && <div className="alert">This request has already been released in good condition and is now view-only.</div>}<div className="toolbar-row"><span className="helper-text">Approved return/access deadline: {request.borrowReturnDueDate || 'Not set'}. Turnaround guide: active files same day; archived physical files 1 to 2 working days.</span>{!isReleasedViewOnly && request.status !== 'Processing' && <button className="secondary" type="button" onClick={startProcessing}>Start Processing</button>}</div><div className="form-grid">{request.documentType === 'Physical' ? <><Field label="Name of Archivist" value={currentUser.name} readOnly /><Field label="Name of Borrower" value={form.borrowerName} readOnly={isReleasedViewOnly} onChange={(v) => update('borrowerName', v)} /><Field label="Date Received" type="date" value={form.dateReceived} readOnly={isReleasedViewOnly} onChange={(v) => update('dateReceived', v)} /><Field label="Date Released" type="date" value={form.dateReleased} min={form.dateReceived || today()} readOnly={isReleasedViewOnly} onChange={(v) => update('dateReleased', v)} /><Field label="Expected Date of Return" type="date" value={form.expectedReturnDate} min={form.dateReleased || today()} readOnly={isReleasedViewOnly} onChange={(v) => update('expectedReturnDate', v)} /><Field label="Condition Before Release" type="select" value={form.physicalConditionBeforeRelease} options={['Good Condition', 'With Existing Damage', 'With Missing Pages', 'With Markings', 'Other']} readOnly={isReleasedViewOnly} onChange={(v) => update('physicalConditionBeforeRelease', v)} /><Field label="Storage Location" value={form.storageLocation} readOnly={isReleasedViewOnly} onChange={(v) => update('storageLocation', v)} /></> : <><Field label="File Released Via" type="select" value={form.electronicReleaseMethod} options={['Link', 'Shared Drive', 'Cloud Platform', 'Other']} readOnly={isReleasedViewOnly} onChange={(v) => update('electronicReleaseMethod', v)} /><Field label="Electronic Release Link" type="url" value={form.electronicReleaseReference} placeholder="https://..." readOnly={isReleasedViewOnly} onChange={(v) => update('electronicReleaseReference', v)} /><Field label="Access Expiry Date" type="date" value={form.accessExpiryDate} min={today()} readOnly={isReleasedViewOnly} onChange={(v) => update('accessExpiryDate', v)} /><label className="agreement"><input type="checkbox" checked={form.deletionConfirmationRequired} disabled={isReleasedViewOnly} onChange={(e) => update('deletionConfirmationRequired', e.target.checked)} /> Deletion confirmation required</label></>}<Field className="wide" label="Release Remarks" type="textarea" value={form.releaseRemarks} readOnly={isReleasedViewOnly} onChange={(v) => update('releaseRemarks', v)} /></div>{!isReleasedViewOnly && <button onClick={release}>Save and Mark Released</button>}</section>;
@@ -1302,10 +1427,13 @@ function ClosurePage({ request, currentUser, processing, closures, incidents, se
   };
   const close = () => {
     if (!validateClosure()) return;
-    const closureRecord = { ...form, validatedBy: form.validatedBy || currentUser.id, closedBy: currentUser.id, closedAt: new Date().toLocaleString() };
+    const closureRecord = { ...form, validatedBy: form.validatedBy || currentUser.id, validatedByName: currentUser.name, closedBy: currentUser.id, closedByName: currentUser.name, closedAt: new Date().toLocaleString() };
     setClosures((records) => ({ ...records, [request.id]: closureRecord }));
+    void saveClosureRecord(request.id, closureRecord).catch((error) => console.error('Failed to save closure record:', error));
     if (request.documentType === 'Physical' && hasIssue) {
-      setIncidents((items) => [{ id: crypto.randomUUID(), requestId: request.id, reportedBy: currentUser.id, incidentType: form.hasDamage || form.conditionUponReturn === 'With Damage' ? 'Damaged' : form.missingPages || form.conditionUponReturn === 'Missing Pages' ? 'Missing' : 'Altered', incidentDescription: 'Issue discovered during return and closure. Archivist must review before closure.', actionTaken: 'Incident report created; closure is blocked until resolved.', status: 'Open', createdAt: new Date().toLocaleString() }, ...items]);
+      const incidentRecord = { id: crypto.randomUUID(), requestId: request.id, reportedBy: currentUser.id, reportedByName: currentUser.name, incidentType: form.hasDamage || form.conditionUponReturn === 'With Damage' ? 'Damaged' : form.missingPages || form.conditionUponReturn === 'Missing Pages' ? 'Missing' : 'Altered', incidentDescription: 'Issue discovered during return and closure. Archivist must review before closure.', actionTaken: 'Incident report created; closure is blocked until resolved.', status: 'Open', createdAt: new Date().toLocaleString() };
+      setIncidents((items) => [incidentRecord, ...items]);
+      void saveIncidentRecord(incidentRecord).catch((error) => console.error('Failed to save incident record:', error));
       updateRequestStatus(request.id, 'Incident Reported', 'Incident created during closure', form.closureRemarks);
       return;
     }
@@ -1322,13 +1450,15 @@ function NewIncident({ requests, currentUser, setIncidents, updateRequestStatus,
   const update = (key, value) => setForm((draft) => ({ ...draft, [key]: value }));
   const save = () => {
     if (!form.requestId || !form.incidentDescription.trim()) return;
-    setIncidents((items) => [{ ...form, id: crypto.randomUUID(), reportedBy: currentUser.id, createdAt: new Date().toLocaleString() }, ...items]);
+    const incidentRecord = { ...form, id: crypto.randomUUID(), reportedBy: currentUser.id, reportedByName: currentUser.name, createdAt: new Date().toLocaleString() };
+    setIncidents((items) => [incidentRecord, ...items]);
+    void saveIncidentRecord(incidentRecord).catch((error) => console.error('Failed to save incident record:', error));
     updateRequestStatus(form.requestId, 'Incident Reported', 'Created incident report', form.incidentDescription);
     setPath('/incidents');
   };
   return <section className="page"><PageTitle title="Create Incident Report" /><div className="form-grid"><label className="field"><span>Request</span><select value={form.requestId} onChange={(event) => update('requestId', event.target.value)}>{requests.map((request) => <option value={request.id} key={request.id}>{request.requestNo} - {request.documentTitle}</option>)}</select></label><Field label="Reported By" value={currentUser.name} readOnly /><Field label="Incident Type" type="select" value={form.incidentType} options={['Lost', 'Missing', 'Damaged', 'Altered', 'Unauthorized Sharing', 'Overdue', 'Access Not Revoked', 'Other']} onChange={(v) => update('incidentType', v)} /><Field label="Status" type="select" value={form.status} options={['Open', 'Under Review', 'Resolved', 'Closed']} onChange={(v) => update('status', v)} /><Field className="wide" label="Incident Description" type="textarea" value={form.incidentDescription} onChange={(v) => update('incidentDescription', v)} /><Field className="wide" label="Action Taken" type="textarea" value={form.actionTaken} onChange={(v) => update('actionTaken', v)} /></div><button disabled={!form.requestId || !form.incidentDescription} onClick={save}>Create Incident</button></section>;
 }
-function Reports({ requests, incidents, auditLogs, users, setPath }) {
+function Reports({ requests, incidents, auditLogs, users, setPath, branchesList, departmentsList }) {
   const [filter, setFilter] = useState({ branch: 'All', department: 'All', status: 'All', documentType: 'All', confidentialityLevel: 'All', requestorId: 'All', archivistId: 'All', dateFrom: '', dateTo: '' });
   const [activeReport, setActiveReport] = useState('Request Summary');
   const filtered = requests.filter((request) => {
@@ -1366,7 +1496,7 @@ function Reports({ requests, incidents, auditLogs, users, setPath }) {
   return (
     <section className="page reports-page">
       <PageTitle title="Reports" subtitle="Export-ready monitoring tables with branch, department, date range, status, document type, confidentiality, requestor, and archivist filters." />
-      <div className="filters"><Field label="Branch" type="select" value={filter.branch} options={['All', ...branches]} onChange={(v) => setFilter({ ...filter, branch: v })} /><Field label="Department" type="select" value={filter.department} options={['All', ...departments]} onChange={(v) => setFilter({ ...filter, department: v })} /><Field label="Date From" type="date" value={filter.dateFrom} onChange={(v) => setFilter({ ...filter, dateFrom: v })} /><Field label="Date To" type="date" value={filter.dateTo} onChange={(v) => setFilter({ ...filter, dateTo: v })} /><Field label="Status" type="select" value={filter.status} options={['All', ...statuses]} onChange={(v) => setFilter({ ...filter, status: v })} /><Field label="Document Type" type="select" value={filter.documentType} options={['All', 'Physical', 'Electronic']} onChange={(v) => setFilter({ ...filter, documentType: v })} /><Field label="Confidentiality" type="select" value={filter.confidentialityLevel} options={['All', ...confidentialityLevels]} onChange={(v) => setFilter({ ...filter, confidentialityLevel: v })} /><label className="field"><span>Requestor</span><select value={filter.requestorId} onChange={(event) => setFilter({ ...filter, requestorId: event.target.value })}><option value="All">All</option>{users.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select></label><label className="field"><span>Archivist</span><select value={filter.archivistId} onChange={(event) => setFilter({ ...filter, archivistId: event.target.value })}><option value="All">All</option>{users.filter((user) => user.role === 'archivist').map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select></label></div>
+      <div className="filters"><Field label="Branch" type="select" value={filter.branch} options={['All', ...branchesList]} onChange={(v) => setFilter({ ...filter, branch: v })} /><Field label="Department" type="select" value={filter.department} options={['All', ...departmentsList]} onChange={(v) => setFilter({ ...filter, department: v })} /><Field label="Date From" type="date" value={filter.dateFrom} onChange={(v) => setFilter({ ...filter, dateFrom: v })} /><Field label="Date To" type="date" value={filter.dateTo} onChange={(v) => setFilter({ ...filter, dateTo: v })} /><Field label="Status" type="select" value={filter.status} options={['All', ...statuses]} onChange={(v) => setFilter({ ...filter, status: v })} /><Field label="Document Type" type="select" value={filter.documentType} options={['All', 'Physical', 'Electronic']} onChange={(v) => setFilter({ ...filter, documentType: v })} /><Field label="Confidentiality" type="select" value={filter.confidentialityLevel} options={['All', ...confidentialityLevels]} onChange={(v) => setFilter({ ...filter, confidentialityLevel: v })} /><label className="field"><span>Requestor</span><select value={filter.requestorId} onChange={(event) => setFilter({ ...filter, requestorId: event.target.value })}><option value="All">All</option>{users.map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select></label><label className="field"><span>Archivist</span><select value={filter.archivistId} onChange={(event) => setFilter({ ...filter, archivistId: event.target.value })}><option value="All">All</option>{users.filter((user) => user.role === 'archivist').map((user) => <option value={user.id} key={user.id}>{user.name}</option>)}</select></label></div>
       <div className="toolbar-row"><span className="helper-text">Current report: {activeTab.label}</span><button className="secondary" type="button" disabled={!activeRequests.length} onClick={exportCsv}>Export CSV</button></div>
       <div className="report-tabs">
         {reportTabs.map((tab) => (
@@ -1389,54 +1519,264 @@ function IncidentTable({ incidents, requests, setPath }) {
   return <div className="table-card"><table><thead><tr><th>Request</th><th>Type</th><th>Description</th><th>Action Taken</th><th>Status</th></tr></thead><tbody>{incidents.map((incident) => <tr key={incident.id} onClick={() => setPath(`/requests/${incident.requestId}`)}><td>{requests.find((request) => request.id === incident.requestId)?.requestNo}</td><td>{incident.incidentType}</td><td>{incident.incidentDescription}</td><td>{incident.actionTaken}</td><td>{incident.status}</td></tr>)}{!incidents.length && <tr><td colSpan="5" className="empty">No incident reports.</td></tr>}</tbody></table></div>;
 }
 
-function Users({ users, setUsers, currentUserId }) {
+function Users({ users, setUsers, currentUserId, currentUser, branchesList, departmentsList }) {
+  const branchOptions = useMemo(() => [...new Set([
+    ...(Array.isArray(branchesList) ? branchesList : []),
+    ...branches,
+  ].filter((value) => Boolean(value) && value !== 'Main Office' && value !== 'Head Office'))], [branchesList]);
+  const departmentOptions = useMemo(() => [...new Set([
+    ...(Array.isArray(departmentsList) ? departmentsList : []),
+    ...departments,
+  ].filter(Boolean))], [departmentsList]);
+  const defaultBranch = branchOptions[0] || branches[0] || '';
+  const defaultDepartment = departmentOptions[0] || departments[0] || '';
   const [userList, setUserList] = useState(users);
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState({});
-  const [newUser, setNewUser] = useState({ name: '', email: '', password: 'temporary123', gender: 'male', role: 'requestor', branch: 'Main Office', department: 'Savings', position: 'Staff' });
+  const [newUser, setNewUser] = useState({ fullName: '', email: '', password: '', confirmPassword: '', role: 'requestor', branch: defaultBranch, department: defaultDepartment });
+  const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showEditPassword, setShowEditPassword] = useState(false);
+  const [isCreatingUser, setIsCreatingUser] = useState(false);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [errors, setErrors] = useState([]);
 
   useEffect(() => {
     setUserList(users);
   }, [users]);
 
+  useEffect(() => {
+    if (!branchOptions.length && !departmentOptions.length) return;
+    setNewUser((current) => {
+      const nextBranch = branchOptions.includes(current.branch) ? current.branch : (current.branch || defaultBranch || branchOptions[0] || '');
+      const nextDepartment = current.role === 'ceo'
+        ? 'All'
+        : departmentOptions.includes(current.department)
+          ? current.department
+          : (current.department || defaultDepartment || departmentOptions[0] || '');
+      if (nextBranch === current.branch && nextDepartment === current.department) return current;
+      return { ...current, branch: nextBranch, department: nextDepartment };
+    });
+  }, [branchOptions, departmentOptions, defaultBranch, defaultDepartment]);
+
   const startEdit = (user) => {
     setEditingId(user.id);
-    setDraft(user);
+    setErrors([]);
+    setDraft({
+      ...user,
+      branch: user.branch || defaultBranch,
+      department: user.role === 'ceo' ? 'All' : (user.department || defaultDepartment),
+      password: '',
+    });
+    setShowEditPassword(false);
   };
 
-  const saveEdit = () => {
-    setUsers((items) => items.map((item) => {
-      if (item.id !== editingId) return item;
-      const name = draft.name?.trim() || item.name;
-      const gender = draft.gender || item.gender;
-      const avatar = draft.avatarCustom ? draft.avatar : getAvatarUrl(name, gender);
-      return { ...item, ...draft, name, email: draft.email?.trim().toLowerCase() || item.email, avatar };
-    }));
+  const closeEditUserModal = () => {
     setEditingId(null);
     setDraft({});
+    setShowEditPassword(false);
+    setErrors([]);
+  };
+
+  const saveEdit = async () => {
+    const target = users.find((item) => item.id === editingId);
+    if (!target) return;
+    const name = draft.name?.trim() || target.name;
+    const email = draft.email?.trim().toLowerCase() || target.email;
+    const validationErrors = [];
+    if (!name) validationErrors.push('Full name is required.');
+    if (!email) validationErrors.push('Email is required.');
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) validationErrors.push('Please enter a valid email address.');
+    if (validationErrors.length) {
+      setErrors(validationErrors);
+      return;
+    }
+
+    const avatar = draft.avatarCustom ? draft.avatar : getAvatarUrl(name);
+    const nextStatus = draft.status || target.status || (target.is_active === false ? 'Inactive' : 'Active');
+    const nextRole = normalizeRole(draft.role || target.role);
+    const nextProfile = {
+      full_name: name,
+      email,
+      branch: draft.branch?.trim() || target.branch,
+      department: nextRole === 'ceo' ? 'All' : (draft.department?.trim() || target.department),
+      position: draft.position?.trim() || target.position || '',
+      role: nextRole,
+      status: nextStatus,
+      avatar_url: avatar,
+    };
+
+    setIsSavingEdit(true);
+    try {
+      if (supabaseConfig.isConfigured && supabase) {
+        const { error } = await updateUserAccount({
+          userId: editingId,
+          profile: nextProfile,
+        });
+        if (error) {
+          setErrors([readErrorMessage(error, 'Update user failed.')]);
+          return;
+        }
+      }
+
+      setUsers((items) => items.map((item) => {
+        if (item.id !== editingId) return item;
+        return {
+          ...item,
+          ...draft,
+          password: undefined,
+          name,
+          email,
+          avatar,
+          status: nextStatus,
+          is_active: nextStatus !== 'Inactive',
+          role: nextProfile.role,
+          branch: nextProfile.branch,
+          department: nextProfile.department,
+          position: nextProfile.position,
+        };
+      }));
+      setErrors([]);
+      closeEditUserModal();
+    } finally {
+      setIsSavingEdit(false);
+    }
   };
 
   const updateNewUser = (key, value) => setNewUser((current) => ({ ...current, [key]: value }));
 
-  const addUser = () => {
-    const name = newUser.name.trim();
-    const email = newUser.email.trim().toLowerCase();
-    if (!name || !email || !newUser.password) return;
-    if (users.some((user) => user.email.toLowerCase() === email)) return;
-    const next = {
-      ...newUser,
-      id: crypto.randomUUID(),
-      name,
-      email,
-      branch: normalizeBranchName(newUser.branch),
-      avatar: getAvatarUrl(name, newUser.gender),
-    };
-    setUsers((items) => [...items, next]);
-    setNewUser({ name: '', email: '', password: 'temporary123', gender: 'male', role: 'requestor', branch: 'Main Office', department: 'Savings', position: 'Staff' });
+  const handleNewUserRoleChange = (value) => {
+    setNewUser((current) => ({
+      ...current,
+      role: value,
+      department: value === 'ceo' ? 'All' : current.department === 'All' ? 'Savings' : current.department,
+    }));
   };
 
-  const deleteUser = (id) => {
+  const handleDraftRoleChange = (value) => {
+    setDraft((current) => ({
+      ...current,
+      role: value,
+      department: value === 'ceo' ? 'All' : current.department === 'All' ? defaultDepartment : current.department,
+    }));
+  };
+
+  const closeCreateUserModal = () => {
+    setIsCreateUserModalOpen(false);
+    setNewUser({ fullName: '', email: '', password: '', confirmPassword: '', role: 'requestor', branch: defaultBranch, department: defaultDepartment });
+    setErrors([]);
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
+  };
+
+  const addUser = async () => {
+    const fullName = newUser.fullName.trim();
+    const email = newUser.email.trim().toLowerCase();
+    const password = newUser.password.trim();
+    const confirmPassword = newUser.confirmPassword.trim();
+    const nextErrors = [];
+
+    if (!fullName) nextErrors.push('Full name is required.');
+    if (!email) nextErrors.push('Email is required.');
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) nextErrors.push('Please enter a valid email address.');
+    if (!password) nextErrors.push('Password is required.');
+    else if (password.length < 6) nextErrors.push('Password must be at least 6 characters.');
+    if (!confirmPassword) nextErrors.push('Confirm password is required.');
+    if (password && confirmPassword && password !== confirmPassword) nextErrors.push('Passwords do not match.');
+    if (!newUser.branch) nextErrors.push('Branch is required.');
+    if (!newUser.department) nextErrors.push('Department is required.');
+    if (!newUser.role) nextErrors.push('Role is required.');
+    if (users.some((user) => user.email.toLowerCase() === email)) nextErrors.push('Email is already used by another account.');
+    if (nextErrors.length) {
+      setErrors(nextErrors);
+      return;
+    }
+
+    setErrors([]);
+    setIsCreatingUser(true);
+    try {
+      const branch = String(newUser.branch || '').trim() || defaultBranch;
+      const department = String(newUser.department || '').trim() || defaultDepartment;
+      const avatar = getAvatarUrl(fullName);
+      let next = {
+        id: crypto.randomUUID(),
+        name: fullName,
+        email,
+        role: newUser.role,
+        branch,
+        department,
+        avatar,
+        status: 'Active',
+        is_active: true,
+        createdAt: new Date().toISOString(),
+        createdBy: currentUser?.id || currentUserId || '',
+        createdByName: currentUser?.name || users.find((user) => user.id === currentUserId)?.name || 'SUPER ADMIN - ICT',
+        avatarCustom: false,
+      };
+
+      const creatorName = currentUser?.name || users.find((user) => user.id === currentUserId)?.name || 'SUPER ADMIN - ICT';
+
+      if (supabaseConfig.isConfigured && supabase) {
+        const { data, error } = await createUserAccount({
+          email,
+          password,
+          profile: {
+            full_name: fullName,
+            branch,
+            department,
+            role: newUser.role,
+            avatar_url: avatar,
+            created_by_name: creatorName,
+          },
+        });
+
+        if (error) {
+          setErrors([readErrorMessage(error, 'Create user failed.')]);
+          return;
+        }
+
+        const syncedId = data?.profile?.id || data?.user?.id || data?.id;
+        if (syncedId) {
+          next.id = syncedId;
+        }
+        if (data?.profile) {
+          next = {
+            ...next,
+            ...data.profile,
+            id: data.profile.id || syncedId || next.id,
+            status: data.profile.status || 'Active',
+            is_active: data.profile.is_active !== false,
+            createdBy: data.profile.createdBy || data.profile.created_by || next.createdBy,
+            createdByName: data.profile.createdByName || data.profile.created_by_name || next.createdByName,
+          };
+        }
+      }
+
+      setUsers((items) => {
+        const existingIndex = items.findIndex((user) => user.email.toLowerCase() === email);
+        if (existingIndex >= 0) {
+          const cloned = [...items];
+          cloned[existingIndex] = { ...cloned[existingIndex], ...next };
+          return cloned;
+        }
+        return [next, ...items];
+      });
+      closeCreateUserModal();
+    } finally {
+      setIsCreatingUser(false);
+    }
+  };
+
+  const deleteUser = async (id) => {
     if (id === currentUserId) return;
+    if (supabaseConfig.isConfigured && supabase) {
+      const { error } = await deleteUserAccount({ userId: id });
+      if (error) {
+        setErrors([readErrorMessage(error, 'Delete user failed.')]);
+        return;
+      }
+    }
     setUsers((items) => items.filter((item) => item.id !== id));
     if (editingId === id) {
       setEditingId(null);
@@ -1446,18 +1786,12 @@ function Users({ users, setUsers, currentUserId }) {
 
   return (
     <section className="page users-page">
-      <PageTitle title="User Management" subtitle="Admin view of users, roles, branches, departments, and active status." />
+      <PageTitle title="User Management" subtitle={`Admin view of users, roles, branches, departments, and active status. ${supabaseConfig.isConfigured ? 'Supabase sync on.' : 'Supabase sync off.'} All profiles from the database are shown here.`} />
+      {errors.length > 0 && <AlertList items={errors} />}
       <div className="table-card add-user-card">
-        <h3>Add New User</h3>
-        <div className="form-grid">
-          <Field label="Name" value={newUser.name} onChange={(value) => updateNewUser('name', value)} />
-          <Field label="Gmail / Email" type="email" value={newUser.email} onChange={(value) => updateNewUser('email', value)} />
-          <Field label="Password" value={newUser.password} onChange={(value) => updateNewUser('password', value)} />
-          <Field label="Role" type="select" value={newUser.role} options={Object.keys(roles)} onChange={(value) => updateNewUser('role', value)} />
-          <Field label="Branch" type="select" value={newUser.branch} options={branches} onChange={(value) => updateNewUser('branch', value)} />
-          <Field label="Department" type="select" value={newUser.department} options={departments} onChange={(value) => updateNewUser('department', value)} />
-        </div>
-        <button type="button" disabled={!newUser.name.trim() || !newUser.email.trim() || !newUser.password} onClick={addUser}>Add User</button>
+        <h3>Create User Account</h3>
+        <p className="helper-text">Only super admins can create accounts here. Click the button to open the account form.</p>
+        <button className="create-user-button" type="button" onClick={() => setIsCreateUserModalOpen(true)}>Create User</button>
       </div>
       <div className="table-card">
         <table>
@@ -1465,44 +1799,35 @@ function Users({ users, setUsers, currentUserId }) {
             <tr>
               <th>Name</th>
               <th>Email</th>
-              <th>Password</th>
+              <th>Status</th>
               <th>Role</th>
               <th>Branch</th>
               <th>Department</th>
+              <th>Created At</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {userList.map((user) => {
-              const isEditing = editingId === user.id;
               return (
-                <tr key={user.id} className={isEditing ? 'editing-row' : ''} onClick={() => !isEditing && startEdit(user)}>
+                <tr key={user.id}>
                   <td>
                     <div className="user-cell">
-                      <img className="avatar-image" src={(isEditing ? draft.avatar : user.avatar) || getAvatarUrl(isEditing ? draft.name : user.name, isEditing ? draft.gender : user.gender)} alt={user.name} />
+                      <img className="avatar-image" src={user.avatar || getAvatarUrl(user.name)} alt={user.name} />
                       <div>
-                        {isEditing ? <input value={draft.name || ''} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /> : <strong>{user.name}</strong>}
-                        {!isEditing && <div className="user-meta">{user.email}</div>}
+                        <strong>{user.name}</strong>
                       </div>
                     </div>
                   </td>
-                  <td>{isEditing ? <input value={draft.email || ''} onChange={(event) => setDraft((current) => ({ ...current, email: event.target.value }))} /> : user.email}</td>
-                  <td>{isEditing ? <input value={draft.password || ''} onChange={(event) => setDraft((current) => ({ ...current, password: event.target.value }))} /> : (user.password || '-')}</td>
-                  <td>{isEditing ? <select value={draft.role || ''} onChange={(event) => setDraft((current) => ({ ...current, role: event.target.value }))}>{Object.entries(roles).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select> : roles[user.role]}</td>
-                  <td>{isEditing ? <input value={draft.branch || ''} onChange={(event) => setDraft((current) => ({ ...current, branch: event.target.value }))} /> : user.branch}</td>
-                  <td>{isEditing ? <input value={draft.department || ''} onChange={(event) => setDraft((current) => ({ ...current, department: event.target.value }))} /> : user.department}</td>
+                  <td>{user.email}</td>
+                  <td><span className={user.status === 'Inactive' ? 'badge status-rejected' : 'badge status-approved'}>{user.status || (user.is_active === false ? 'Inactive' : 'Active')}</span></td>
+                  <td>{roles[user.role]}</td>
+                  <td>{user.branch}</td>
+                  <td>{user.department}</td>
+                  <td>{user.createdAt ? new Date(user.createdAt).toLocaleString() : '-'}</td>
                   <td className="actions-cell" onClick={(event) => event.stopPropagation()}>
-                    {isEditing ? (
-                      <>
-                        <button className="secondary" type="button" onClick={saveEdit}>Save</button>
-                        <button className="ghost" type="button" onClick={() => { setEditingId(null); setDraft({}); }}>Cancel</button>
-                      </>
-                    ) : (
-                      <>
-                        <button className="secondary" type="button" onClick={() => startEdit(user)}>Edit</button>
-                        <button className="danger" type="button" disabled={user.id === currentUserId} onClick={() => deleteUser(user.id)}>Delete</button>
-                      </>
-                    )}
+                    <button className="secondary" type="button" onClick={() => startEdit(user)}>Edit</button>
+                    <button className="danger" type="button" disabled={user.id === currentUserId} onClick={() => { void deleteUser(user.id); }}>Delete</button>
                   </td>
                 </tr>
               );
@@ -1510,6 +1835,71 @@ function Users({ users, setUsers, currentUserId }) {
           </tbody>
         </table>
       </div>
+      {editingId && (
+        <div className="profile-editor edit-user-modal" role="dialog" aria-modal="true" aria-label="Edit user">
+          <div className="profile-editor-panel edit-user-panel">
+            <div className="modal-header">
+              <div>
+                <h2>Edit User</h2>
+                <p className="helper-text">Update this workspace account stored directly in Supabase.</p>
+              </div>
+              <button className="ghost modal-close-button" type="button" onClick={closeEditUserModal} aria-label="Close">x</button>
+            </div>
+            {errors.length > 0 && <AlertList items={errors} />}
+            <div className="form-grid edit-user-grid">
+              <Field label="Username" value={draft.name || ''} onChange={(value) => setDraft((current) => ({ ...current, name: value }))} />
+              <div className="field">
+                <span>Password</span>
+                <PasswordInput value={draft.password || ''} onChange={(value) => setDraft((current) => ({ ...current, password: value }))} isVisible={showEditPassword} onToggle={() => setShowEditPassword((isVisible) => !isVisible)} />
+              </div>
+              <Field label="Full Name" value={draft.name || ''} onChange={(value) => setDraft((current) => ({ ...current, name: value }))} />
+              <Field label="Branch" type="select" value={draft.branch || defaultBranch} options={branchOptions} onChange={(value) => setDraft((current) => ({ ...current, branch: value }))} />
+              <Field label="Email" type="email" value={draft.email || ''} onChange={(value) => setDraft((current) => ({ ...current, email: value }))} />
+              <Field label="Position" value={draft.position || ''} onChange={(value) => setDraft((current) => ({ ...current, position: value }))} />
+              <Field label="Role" type="select" value={draft.role || 'requestor'} options={Object.keys(roles)} onChange={handleDraftRoleChange} />
+              <Field label="Status" type="select" value={draft.status || 'Active'} options={['Active', 'Inactive']} onChange={(value) => setDraft((current) => ({ ...current, status: value }))} />
+              <Field label="Department" type="select" value={draft.role === 'ceo' ? 'All' : (draft.department || defaultDepartment)} options={draft.role === 'ceo' ? ['All'] : departmentOptions} readOnly={draft.role === 'ceo'} onChange={(value) => setDraft((current) => ({ ...current, department: value }))} />
+            </div>
+            <div className="actions edit-user-actions">
+              <button className="ghost" type="button" onClick={closeEditUserModal}>Cancel</button>
+              <button type="button" disabled={isSavingEdit} onClick={() => { void saveEdit(); }}>{isSavingEdit ? 'Saving...' : 'Save Changes'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {isCreateUserModalOpen && (
+        <div className="profile-editor create-user-modal" role="dialog" aria-modal="true" aria-label="Create user account">
+          <div className="profile-editor-panel create-user-panel">
+            <div className="modal-header">
+              <div>
+                <h2>Create User Account</h2>
+                <p className="helper-text">Fill in the details below to create a new system account.</p>
+              </div>
+              <button className="ghost" type="button" onClick={closeCreateUserModal}>Close</button>
+            </div>
+            {errors.length > 0 && <AlertList items={errors} />}
+            <div className="form-grid create-user-grid">
+              <Field label="Full Name" value={newUser.fullName} onChange={(value) => updateNewUser('fullName', value)} />
+              <Field label="Email" type="email" value={newUser.email} onChange={(value) => updateNewUser('email', value)} />
+              <div className="field">
+                <span>Password</span>
+                <PasswordInput value={newUser.password} onChange={(value) => updateNewUser('password', value)} isVisible={showNewPassword} onToggle={() => setShowNewPassword((isVisible) => !isVisible)} />
+              </div>
+              <div className="field">
+                <span>Confirm Password</span>
+                <PasswordInput value={newUser.confirmPassword} onChange={(value) => updateNewUser('confirmPassword', value)} isVisible={showConfirmPassword} onToggle={() => setShowConfirmPassword((isVisible) => !isVisible)} />
+              </div>
+              <Field label="Branch" type="select" value={newUser.branch} options={branchOptions} onChange={(value) => updateNewUser('branch', value)} />
+              <Field label="Department" type="select" value={newUser.department} options={newUser.role === 'ceo' ? ['All', ...departmentOptions.filter((item) => item !== 'All')] : departmentOptions} onChange={(value) => updateNewUser('department', value)} />
+              <Field label="Role" type="select" value={newUser.role} options={Object.keys(roles)} onChange={handleNewUserRoleChange} />
+            </div>
+            <div className="actions create-user-actions">
+              <button type="button" disabled={isCreatingUser} onClick={addUser}>{isCreatingUser ? 'Creating...' : 'Create User'}</button>
+              <button className="ghost" type="button" onClick={closeCreateUserModal}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -1650,15 +2040,12 @@ const systemProcessSteps = [
   },
 ];
 
-function Settings({ theme, setTheme }) {
-  const storedSettings = useMemo(() => loadStoredValue(settingsStorageKey, {}), []);
+function Settings({ theme, setTheme, initialSettings, onSettingsChange }) {
   const [branchesList, setBranchesList] = useState(() => {
-    const storedBranches = Array.isArray(storedSettings.branches) ? storedSettings.branches.map(normalizeBranchName) : [];
-    const mergedBranches = [...branches, ...storedBranches].filter((branch, index, list) => list.indexOf(branch) === index);
-    return mergedBranches;
+    return Array.isArray(initialSettings?.branches) ? initialSettings.branches.map(normalizeBranchName) : [];
   });
-  const [departmentsList, setDepartmentsList] = useState(() => storedSettings.departments || departments);
-  const [categoriesList, setCategoriesList] = useState(() => storedSettings.categories || ['Member Records', 'Finance Records', 'HR Records', 'Board Records']);
+  const [departmentsList, setDepartmentsList] = useState(() => initialSettings?.departments || []);
+  const [categoriesList, setCategoriesList] = useState(() => initialSettings?.categories || []);
   const [editingItem, setEditingItem] = useState(null);
   const [draftValue, setDraftValue] = useState('');
   const [notice, setNotice] = useState('');
@@ -1666,12 +2053,13 @@ function Settings({ theme, setTheme }) {
   const [newItemValue, setNewItemValue] = useState('');
 
   useEffect(() => {
-    saveStoredValue(settingsStorageKey, {
-      branches: branchesList,
-      departments: departmentsList,
-      categories: categoriesList,
-    });
-  }, [branchesList, departmentsList, categoriesList]);
+    const nextBranches = Array.isArray(initialSettings?.branches) ? initialSettings.branches.map(normalizeBranchName) : [];
+    const nextDepartments = Array.isArray(initialSettings?.departments) ? initialSettings.departments : [];
+    const nextCategories = Array.isArray(initialSettings?.categories) ? initialSettings.categories : [];
+    setBranchesList(nextBranches);
+    setDepartmentsList(nextDepartments);
+    setCategoriesList(nextCategories);
+  }, [initialSettings]);
 
   const startEdit = (section, index, value) => {
     setEditingItem({ section, index });
@@ -1727,7 +2115,7 @@ function Settings({ theme, setTheme }) {
       <PageTitle title="System Settings" subtitle="Branches, departments, document categories, routing, and security settings." />
       <div className="toolbar-row">
         <span className="helper-text">{notice || 'Click any item to edit, delete, or save changes.'}</span>
-        <button className="secondary" type="button" onClick={() => { setEditingItem(null); setDraftValue(''); saveStoredValue(settingsStorageKey, { branches: branchesList, departments: departmentsList, categories: categoriesList }); setNotice('Changes saved permanently'); }}>Save Changes</button>
+        <button className="secondary" type="button" onClick={() => { setEditingItem(null); setDraftValue(''); const nextSettings = { branches: branchesList, departments: departmentsList, categories: categoriesList }; onSettingsChange?.(nextSettings); setNotice('Changes saved permanently'); }}>Save Changes</button>
       </div>
       <article className="info-card process-card">
         <div className="card-header">

@@ -8,6 +8,8 @@ create table public.profiles (
   branch text,
   department text,
   position text,
+  created_by uuid references public.profiles(id),
+  created_by_name text,
   role text not null check (
     role in (
       'requestor',
@@ -145,8 +147,11 @@ create table public.document_categories (
   created_at timestamptz default now()
 );
 
+alter table public.profiles add column if not exists created_by uuid references public.profiles(id);
+alter table public.profiles add column if not exists created_by_name text;
+
 insert into public.branches (name) values
-  ('Main Office'), ('Culasi'), ('Sibalom'), ('San Jose'), ('Balasan'), ('Barotac Viejo'),  ('Molo'), ('Janiuay'), ('Caticlan'), ('Kalibo'), ('San Remigio')
+  ('Culasi'), ('Sibalom'), ('San Jose'), ('Balasan'), ('Barotac Viejo'),  ('Molo'), ('Janiuay'), ('Caticlan'), ('Kalibo'), ('San Remigio')
 on conflict (name) do nothing;
 
 insert into public.departments (name) values

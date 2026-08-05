@@ -1022,6 +1022,95 @@ body.dark .user-chip .avatar-image {
   gap: 10px;
 }
 
+.users-page .table-card {
+  padding: 10px;
+}
+
+.users-page .add-user-card {
+  margin-bottom: 10px;
+}
+
+.users-page .add-user-card .form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.users-page .add-user-card button,
+.users-page .table-card button {
+  min-height: 30px;
+  padding-inline: 9px;
+  font-size: 12px;
+}
+
+.users-page .create-user-button {
+  margin-top: 8px;
+  align-self: flex-start;
+  min-width: 88px;
+  min-height: 30px;
+  padding: 0 14px;
+  border: 1px solid #3b82f6;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.22);
+}
+
+.users-page .create-user-button:hover:not(:disabled) {
+  background: linear-gradient(180deg, #4f8ff7 0%, #2b6de0 100%);
+}
+
+.users-page .create-user-button:disabled {
+  border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.45);
+  color: rgba(255, 255, 255, 0.85);
+  box-shadow: none;
+}
+
+.users-page table {
+  width: 100%;
+}
+
+.users-page th,
+.users-page td {
+  padding: 8px 10px;
+  font-size: 12px;
+  vertical-align: top;
+}
+
+.users-page th {
+  font-size: 11px;
+}
+
+.users-page .user-cell {
+  gap: 8px;
+}
+
+.users-page .user-cell strong {
+  font-size: 13px;
+  line-height: 1.15;
+}
+
+.users-page .user-meta {
+  font-size: 11px;
+}
+
+.users-page .avatar-image {
+  width: 32px;
+  height: 32px;
+}
+
+.users-page .actions-cell {
+  white-space: normal;
+}
+
+.users-page .actions-cell .small,
+.users-page .actions-cell .secondary,
+.users-page .actions-cell .danger {
+  min-height: 30px;
+  padding: 0 9px;
+  font-size: 11px;
+}
+
 .user-meta {
   margin-top: 3px;
   color: var(--muted);
@@ -1051,6 +1140,33 @@ body.dark .user-chip .avatar-image {
 .helper-text {
   color: var(--muted);
   font-size: 13px;
+}
+
+.users-page .helper-text {
+  margin-top: -2px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.users-page .field {
+  gap: 4px;
+}
+
+.users-page .field span {
+  font-size: 11px;
+}
+
+.users-page .field input,
+.users-page .field select,
+.users-page .field textarea,
+.users-page .password-input-wrap input {
+  min-height: 32px;
+  padding: 7px 9px;
+  font-size: 12px;
+}
+
+.users-page .password-input-wrap {
+  gap: 6px;
 }
 
 .card-header {
@@ -1851,6 +1967,34 @@ body.dark .login-panel {
   color: var(--blue-900);
 }
 
+.login-panel button.submit-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 46px;
+}
+
+.login-panel button.submit-button:disabled {
+  opacity: 0.8;
+  cursor: wait;
+}
+
+.button-spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+  animation: login-spin 0.8s linear infinite;
+}
+
+@keyframes login-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .login-actions-row {
   display: flex;
   flex-wrap: wrap;
@@ -1944,6 +2088,77 @@ body.dark .login-panel {
 .profile-editor-panel h2 {
   margin: 0;
   color: inherit;
+}
+
+.create-user-modal .profile-editor-panel {
+  width: min(860px, 100%);
+}
+
+.edit-user-modal .profile-editor-panel {
+  width: min(760px, 100%);
+}
+
+.create-user-panel {
+  gap: 10px;
+}
+
+.edit-user-panel {
+  gap: 10px;
+  padding: 0;
+}
+
+.edit-user-panel .modal-header,
+.edit-user-panel .edit-user-grid,
+.edit-user-panel .alert-list,
+.edit-user-panel .edit-user-actions {
+  padding-inline: 20px;
+}
+
+.edit-user-panel .modal-header {
+  padding-top: 20px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.modal-header h2 {
+  margin: 0 0 4px;
+}
+
+.create-user-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.edit-user-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 14px;
+}
+
+.create-user-actions {
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+.edit-user-actions {
+  justify-content: flex-end;
+  margin-top: 4px;
+  padding-block: 14px 18px;
+  border-top: 1px solid var(--line);
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.modal-close-button {
+  min-width: 34px;
+  padding-inline: 0;
+  font-size: 18px;
+  line-height: 1;
 }
 
 .profile-avatar-preview {
