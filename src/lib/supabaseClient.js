@@ -1,7 +1,26 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = (process.env.REACT_APP_SUPABASE_URL || window.__ENV__?.REACT_APP_SUPABASE_URL || '').trim();
-const supabaseAnonKey = (process.env.REACT_APP_SUPABASE_ANON_KEY || window.__ENV__?.REACT_APP_SUPABASE_ANON_KEY || '').trim();
+function readRuntimeEnv(name) {
+  if (typeof window === 'undefined') return '';
+  return String(window.__ENV__?.[name] || '').trim();
+}
+
+function readBuildEnv(name) {
+  if (name === 'REACT_APP_SUPABASE_URL') return String(process.env.REACT_APP_SUPABASE_URL || '').trim();
+  if (name === 'REACT_APP_SUPABASE_ANON_KEY') return String(process.env.REACT_APP_SUPABASE_ANON_KEY || '').trim();
+  if (name === 'NEXT_PUBLIC_SUPABASE_URL') return String(process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
+  if (name === 'NEXT_PUBLIC_SUPABASE_ANON_KEY') return String(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '').trim();
+  return '';
+}
+
+const supabaseUrl = readBuildEnv('REACT_APP_SUPABASE_URL')
+  || readBuildEnv('NEXT_PUBLIC_SUPABASE_URL')
+  || readRuntimeEnv('REACT_APP_SUPABASE_URL')
+  || readRuntimeEnv('NEXT_PUBLIC_SUPABASE_URL');
+const supabaseAnonKey = readBuildEnv('REACT_APP_SUPABASE_ANON_KEY')
+  || readBuildEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY')
+  || readRuntimeEnv('REACT_APP_SUPABASE_ANON_KEY')
+  || readRuntimeEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
 
 export const supabaseConfig = {
   url: supabaseUrl,

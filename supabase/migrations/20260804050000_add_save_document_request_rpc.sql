@@ -43,13 +43,7 @@ begin
     end if;
   else
     if requestor_id = auth.uid() then
-      if not exists (
-        select 1
-        from public.document_requests dr
-        where dr.id = request_id
-          and dr.requestor_id = auth.uid()
-          and dr.status in ('Draft', 'Needs Clarification', 'Pending Approval')
-      ) then
+      if not public.can_edit_own_request(request_id) then
         raise exception 'Request cannot be edited in its current state.';
       end if;
     elsif not (public.can_approve_request(request_id) or public.is_archivist() or public.is_superadmin()) then

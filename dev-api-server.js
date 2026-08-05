@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
 const adminHandler = require('./api/admin-user-management.js');
+const runtimeEnvHandler = require('./api/runtime-env.js');
 
 function loadDotEnv() {
   const envPath = path.join(__dirname, '.env');
@@ -35,6 +36,10 @@ const server = http.createServer((req, res) => {
 
   if (requestUrl.pathname === '/health') {
     return sendJson(res, 200, { ok: true });
+  }
+
+  if (requestUrl.pathname === '/api/runtime-env.js') {
+    return runtimeEnvHandler(req, res);
   }
 
   if (requestUrl.pathname !== '/api/admin-user-management') {

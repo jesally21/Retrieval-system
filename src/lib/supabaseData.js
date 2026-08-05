@@ -13,7 +13,7 @@ export function normalizeRole(role) {
 }
 
 export function normalizeBranchName(branch) {
-  return normalizeName(branch, 'Head Office');
+  return normalizeName(branch, '');
 }
 
 function uniqueStrings(values) {
@@ -37,7 +37,7 @@ function mapProfileRow(row) {
     name: row.full_name || row.email || '',
     email: row.email || '',
     role: normalizeRole(row.role),
-    branch: normalizeName(row.branch, 'Head Office'),
+    branch: normalizeName(row.branch, ''),
     department: row.department || '',
     position: row.position || '',
     status: row.status || (row.is_active === false ? 'Inactive' : 'Active'),
@@ -69,7 +69,7 @@ function mapRequestRow(row, usersById = new Map()) {
     dateNeeded: row.date_needed,
     borrowReturnDueDate: row.borrow_return_due_date,
     remarks: row.remarks || '',
-    branch: normalizeName(row.branch, 'Head Office'),
+    branch: normalizeName(row.branch, ''),
     department: row.department || '',
     position: row.position || '',
     status: row.status,
@@ -108,6 +108,17 @@ function mapProcessingRow(row, usersById = new Map()) {
     releaseRemarks: row.release_remarks || '',
     archivistId: row.archivist_id || '',
     archivistName: row.archivist_name || archivist?.name || '',
+  };
+}
+
+function mapElectronicReleaseLinkRow(row, usersById = new Map()) {
+  const releasedBy = usersById.get(row.released_by);
+  return {
+    requestId: row.request_id,
+    electronicReleaseReference: row.electronic_release_reference || '',
+    releasedBy: row.released_by || '',
+    releasedByName: row.released_by_name || releasedBy?.name || '',
+    releasedAt: row.released_at || '',
   };
 }
 
@@ -222,6 +233,7 @@ export async function loadSupabaseAppData() {
       users: [],
       requests: [],
       processing: {},
+      electronicReleaseLinks: {},
       closures: {},
       incidents: [],
       auditLogs: [],
@@ -235,6 +247,7 @@ export async function loadSupabaseAppData() {
     profilesResult,
     requestsResult,
     processingResult,
+    releaseLinksResult,
     closuresResult,
     incidentsResult,
     auditLogsResult,
@@ -245,6 +258,7 @@ export async function loadSupabaseAppData() {
     fetchTable('profiles', '*', 'full_name', true).catch(() => []),
     fetchTable('document_requests', '*', 'created_at', false).catch(() => []),
     fetchTable('archivist_processing', '*', 'created_at', false).catch(() => []),
+    fetchTable('electronic_release_links', '*', 'created_at', false).catch(() => []),
     fetchTable('request_closures', '*', 'created_at', false).catch(() => []),
     fetchTable('incident_reports', '*', 'created_at', false).catch(() => []),
     fetchTable('audit_logs', '*', 'created_at', false).catch(() => []),
@@ -257,6 +271,7 @@ export async function loadSupabaseAppData() {
   const usersById = new Map(users.map((user) => [user.id, user]));
   const requests = Array.isArray(requestsResult) ? requestsResult.map((row) => mapRequestRow(row, usersById)) : [];
   const processing = Object.fromEntries((Array.isArray(processingResult) ? processingResult : []).map((row) => [row.request_id, mapProcessingRow(row, usersById)]));
+  const electronicReleaseLinks = Object.fromEntries((Array.isArray(releaseLinksResult) ? releaseLinksResult : []).map((row) => [row.request_id, mapElectronicReleaseLinkRow(row, usersById)]));
   const closures = Object.fromEntries((Array.isArray(closuresResult) ? closuresResult : []).map((row) => [row.request_id, mapClosureRow(row, usersById)]));
   const incidents = Array.isArray(incidentsResult) ? incidentsResult.map((row) => mapIncidentRow(row, usersById)) : [];
   const auditLogs = Array.isArray(auditLogsResult) ? auditLogsResult.map((row) => mapAuditLogRow(row, usersById)) : [];
@@ -265,6 +280,7 @@ export async function loadSupabaseAppData() {
     users,
     requests,
     processing,
+    electronicReleaseLinks,
     closures,
     incidents,
     auditLogs,
@@ -281,7 +297,7 @@ export async function syncProfiles(users) {
     full_name: normalizeName(user.name, user.email),
     email: normalizeName(user.email).toLowerCase(),
     avatar_url: user.avatar || null,
-    branch: normalizeName(user.branch, 'Head Office'),
+    branch: normalizeName(user.branch, ''),
     department: normalizeName(user.department),
     position: normalizeName(user.position),
     status: user.status || (user.is_active === false ? 'Inactive' : 'Active'),
@@ -310,7 +326,7 @@ export async function syncRequests(requests) {
     date_needed: request.dateNeeded,
     borrow_return_due_date: request.borrowReturnDueDate,
     remarks: request.remarks || null,
-    branch: normalizeName(request.branch, 'Head Office'),
+    branch: normalizeName(request.branch, ''),
     department: request.department || null,
     position: request.position || null,
     status: request.status,
@@ -349,7 +365,7 @@ function buildRequestRow(request) {
     date_needed: request.dateNeeded,
     borrow_return_due_date: request.borrowReturnDueDate,
     remarks: request.remarks || null,
-    branch: normalizeName(request.branch, 'Head Office'),
+    branch: normalizeName(request.branch, ''),
     department: request.department || null,
     position: request.position || null,
     status: request.status,
@@ -374,6 +390,7 @@ function buildRequestRow(request) {
 export async function createRequestRecord(request) {
   if (!supabase) return { data: null, error: new Error('Supabase is not configured.') };
   const row = buildRequestRow(request);
+  delete row.id;
   const { data, error } = await supabase.rpc('create_document_request', {
     p_request: row,
   });
@@ -403,6 +420,21 @@ export async function saveProcessingRecord(requestId, record) {
     },
   });
   if (error) return { data: null, error: formatSupabaseError(error, 'Failed to save processing record.') };
+  return { data, error: null };
+}
+
+export async function saveElectronicReleaseLinkRecord(requestId, record) {
+  if (!supabase) return { data: null, error: new Error('Supabase is not configured.') };
+  const { data, error } = await supabase.rpc('save_electronic_release_link', {
+    p_request_id: requestId,
+    p_record: {
+      electronic_release_reference: record.electronicReleaseReference || null,
+      released_by: record.releasedBy || null,
+      released_by_name: record.releasedByName || null,
+      released_at: record.releasedAt || null,
+    },
+  });
+  if (error) return { data: null, error: formatSupabaseError(error, 'Failed to save electronic release link.') };
   return { data, error: null };
 }
 
@@ -492,7 +524,7 @@ export async function resolveRequestApprover({ requestorRole, branch, confidenti
   if (!supabase) return { data: null, error: new Error('Supabase is not configured.') };
   const { data, error } = await supabase.rpc('resolve_request_approver', {
     p_requestor_role: requestorRole,
-    p_branch: normalizeName(branch, 'Head Office'),
+    p_branch: normalizeName(branch, ''),
     p_confidentiality: confidentialityLevel,
   });
   if (error) return { data: null, error: formatSupabaseError(error, 'Failed to resolve approver.') };

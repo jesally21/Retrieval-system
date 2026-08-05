@@ -13,6 +13,7 @@
     "react-scripts": "5.0.1",
     "web-vitals": "^2.1.4"
   },
+  "proxy": "http://127.0.0.1:3001",
   "scripts": {
     "start": "node dev-start.js",
     "start:client": "react-scripts start",

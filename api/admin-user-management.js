@@ -174,6 +174,7 @@ module.exports = async function handler(req, res) {
         password,
         email_confirm: true,
         user_metadata: metadata,
+        app_metadata: { role },
       });
 
       if (createError || !created?.user) {
@@ -260,10 +261,13 @@ module.exports = async function handler(req, res) {
       if (updates.role !== undefined) userMetadata.role = updates.role;
       if (updates.status !== undefined) userMetadata.status = updates.status;
       if (updates.avatar_url !== undefined) userMetadata.avatar_url = updates.avatar_url;
-      if (Object.keys(authUpdate).length || Object.keys(userMetadata).length) {
+      const appMetadata = {};
+      if (updates.role !== undefined) appMetadata.role = updates.role;
+      if (Object.keys(authUpdate).length || Object.keys(userMetadata).length || Object.keys(appMetadata).length) {
         const { error: authUpdateError } = await adminClient.auth.admin.updateUserById(userId, {
           ...authUpdate,
           ...(Object.keys(userMetadata).length ? { user_metadata: userMetadata } : {}),
+          ...(Object.keys(appMetadata).length ? { app_metadata: appMetadata } : {}),
         });
         if (authUpdateError) {
           return json(res, 400, { error: authUpdateError.message || 'Profile updated, but auth sync failed.' });

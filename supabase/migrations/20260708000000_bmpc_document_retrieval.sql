@@ -150,12 +150,56 @@ create table public.document_categories (
 alter table public.profiles add column if not exists created_by uuid references public.profiles(id);
 alter table public.profiles add column if not exists created_by_name text;
 
+delete from public.branches where name not in (
+  'Barbaza',
+  'Culasi',
+  'Sibalom',
+  'San Jose',
+  'Balasan',
+  'Barotac Viejo',
+  'Caticlan',
+  'Molo',
+  'Kalibo',
+  'Janiuay',
+  'Calinog',
+  'Sara',
+  'Pres. Roxas',
+  'Altavas'
+);
+
 insert into public.branches (name) values
-  ('Culasi'), ('Sibalom'), ('San Jose'), ('Balasan'), ('Barotac Viejo'),  ('Molo'), ('Janiuay'), ('Caticlan'), ('Kalibo'), ('San Remigio')
+  ('Barbaza'),
+  ('Culasi'),
+  ('Sibalom'),
+  ('San Jose'),
+  ('Balasan'),
+  ('Barotac Viejo'),
+  ('Caticlan'),
+  ('Molo'),
+  ('Kalibo'),
+  ('Janiuay'),
+  ('Calinog'),
+  ('Sara'),
+  ('Pres. Roxas'),
+  ('Altavas')
 on conflict (name) do nothing;
 
+delete from public.departments where name not in (
+  'ICT Department',
+  'Membership & Marketing Department',
+  'Savings & Credit Department',
+  'Finance & Accounting Department',
+  'Human Resources & Administration Department',
+  'Internal Audit Department'
+);
+
 insert into public.departments (name) values
-  ('ICT Department'), ('HRAD'), ('Accounting'), ('Audit'), ('SACD'), ('Lending'), ('Savings'), ('Broadband Division'), ('Records / Archive')
+  ('ICT Department'),
+  ('Membership & Marketing Department'),
+  ('Savings & Credit Department'),
+  ('Finance & Accounting Department'),
+  ('Human Resources & Administration Department'),
+  ('Internal Audit Department')
 on conflict (name) do nothing;
 
 insert into public.document_categories (name, description) values
@@ -241,8 +285,23 @@ create policy "request visibility by ownership routing and role" on public.docum
       and p.branch = document_requests.branch
   )
 );
+create or replace function public.can_edit_own_request(target_request_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1
+    from public.document_requests dr
+    where dr.id = target_request_id
+      and dr.requestor_id = auth.uid()
+      and dr.status = 'Draft'
+  )
+$$;
 create policy "requestors update editable own requests" on public.document_requests for update using (
-  requestor_id = auth.uid() and status in ('Draft', 'Needs Clarification', 'Pending Approval')
+  public.can_edit_own_request(id)
 ) with check (requestor_id = auth.uid());
 create policy "requestors delete own requests" on public.document_requests for delete using (requestor_id = auth.uid());
 create policy "approvers update routed requests" on public.document_requests for update using (public.can_approve_request(id)) with check (public.can_approve_request(id));

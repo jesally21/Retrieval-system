@@ -9,6 +9,8 @@ declare
   requestor_id uuid := nullif(trim(coalesce(p_request->>'requestor_id', '')), '')::uuid;
   request_status text := coalesce(nullif(trim(p_request->>'status'), ''), 'Pending Approval');
 begin
+  p_request := p_request - 'id';
+
   if auth.uid() is null then
     raise exception 'Not authenticated.';
   end if;

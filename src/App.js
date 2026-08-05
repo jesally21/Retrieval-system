@@ -18,6 +18,7 @@ import {
   normalizeRole,
   resolveRequestApprover,
   saveAuditLogRecord,
+  saveElectronicReleaseLinkRecord,
   saveClosureRecord,
   saveIncidentRecord,
   saveProcessingRecord,
@@ -37,8 +38,15 @@ const roles = {
 const adminRoles = ['superadmin', 'ceo', 'dpo'];
 const superAdminRoles = ['superadmin'];
 
-const branches = ['Culasi', 'Sibalom', 'San Jose', 'Balasan', 'Barotac Viejo', 'Molo', 'Janiuay', 'Caticlan', 'Kalibo', 'San Remigio', 'Barbaza', 'Hamtic', 'Laua-an'];
-const departments = ['ICT Department', 'HRAD', 'Accounting', 'Audit', 'SACD', 'Lending', 'Savings', 'Broadband Division', 'Records / Archive', 'Branch Operations', 'Compliance', 'Executive'];
+const branches = ['Barbaza', 'Culasi', 'Sibalom', 'San Jose', 'Balasan', 'Barotac Viejo', 'Caticlan', 'Molo', 'Kalibo', 'Janiuay', 'Calinog', 'Sara', 'Pres. Roxas', 'Altavas'];
+const departments = [
+  'ICT Department',
+  'Membership & Marketing Department',
+  'Savings & Credit Department',
+  'Finance & Accounting Department',
+  'Human Resources & Administration Department',
+  'Internal Audit Department',
+];
 const statuses = ['Draft', 'Pending Approval', 'Rejected', 'Approved', 'Forwarded to Archivist', 'Processing', 'Released', 'Returned', 'Access Revoked', 'Deletion Confirmed', 'For Closure', 'Closed', 'Incident Reported', 'Overdue'];
 const confidentialityLevels = ['Non Confidential', 'Confidential'];
 
@@ -87,29 +95,6 @@ function normalizeLoadedUsers(users = []) {
   })) : [];
 }
 
-function mergeLoadedUsers(...userLists) {
-  const merged = new Map();
-
-  for (const list of userLists) {
-    for (const user of Array.isArray(list) ? list : []) {
-      const key = user?.id || user?.email;
-      if (!key) continue;
-      const existing = merged.get(key) || {};
-      merged.set(key, {
-        ...existing,
-        ...user,
-        password: undefined,
-        status: user.status || existing.status || (user.is_active === false || existing.is_active === false ? 'Inactive' : 'Active'),
-        createdAt: user.createdAt || user.created_at || existing.createdAt || existing.created_at || '',
-        createdBy: user.createdBy || user.created_by || existing.createdBy || existing.created_by || '',
-        createdByName: user.createdByName || user.created_by_name || existing.createdByName || existing.created_by_name || '',
-      });
-    }
-  }
-
-  return Array.from(merged.values());
-}
-
 function mapAuthUserToProfile(user) {
   const metadata = user?.user_metadata || {};
   const name = metadata.full_name || metadata.name || user?.email || 'User';
@@ -119,26 +104,13 @@ function mapAuthUserToProfile(user) {
     name,
     email: user.email || '',
     role,
-    branch: normalizeBranchName(metadata.branch || 'Head Office'),
-    department: metadata.department || 'Savings',
-    position: metadata.position || 'Staff',
+    branch: normalizeBranchName(metadata.branch || ''),
+    department: metadata.department || '',
+    position: metadata.position || '',
     status: metadata.status || 'Active',
     avatar: metadata.avatar_url || getAvatarUrl(name),
     is_active: true,
     avatarCustom: Boolean(metadata.avatar_url),
-  };
-}
-
-function buildFallbackSnapshot(user) {
-  const currentUser = user ? mapAuthUserToProfile(user) : null;
-  return {
-    users: currentUser ? [currentUser] : [],
-    requests: [],
-    processing: {},
-    closures: {},
-    incidents: [],
-    auditLogs: [],
-    settings: normalizeLoadedSettings({}),
   };
 }
 
@@ -154,12 +126,6 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function generateRequestNo(requests) {
-  const date = today().replaceAll('-', '');
-  const count = requests.filter((request) => request.requestNo.includes(date)).length + 1;
-  return `DRR-${date}-${String(count).padStart(4, '0')}`;
-}
-
 function determineApprover(profile, request, users) {
   const requestBranch = request.branch || profile.branch;
   if (request.confidentialityLevel === 'Confidential') {
@@ -172,7 +138,8 @@ function determineApprover(profile, request, users) {
     return users.find((user) => user.role === 'branch_head' && user.branch === requestBranch)?.id || users.find((user) => user.role === 'branch_head')?.id || users.find((user) => user.role === 'department_head')?.id || '';
   }
   if (profile.role === 'branch_head') return users.find((user) => user.role === 'department_head')?.id || users.find((user) => user.role === 'superadmin')?.id || '';
-  if (['department_head', 'dpo', 'ceo'].includes(profile.role)) return users.find((user) => user.role === 'superadmin')?.id || users.find((user) => adminRoles.includes(user.role))?.id || '';
+  if (profile.role === 'department_head') return users.find((user) => user.role === 'ceo')?.id || users.find((user) => user.role === 'superadmin')?.id || users.find((user) => adminRoles.includes(user.role))?.id || '';
+  if (['dpo', 'ceo'].includes(profile.role)) return users.find((user) => user.role === 'superadmin')?.id || users.find((user) => adminRoles.includes(user.role))?.id || '';
   return users.find((user) => adminRoles.includes(user.role))?.id || '';
 }
 
@@ -236,7 +203,7 @@ function isPathAllowed(path, role) {
 }
 
 function canViewReleaseReferences(user, request) {
-  return request.requestorId === user.id || request.assignedArchivistId === user.id || user.role === 'archivist' || adminRoles.includes(user.role) || ['dpo', 'ceo'].includes(user.role);
+  return request.requestorId === user.id || user.role === 'archivist' || user.role === 'superadmin';
 }
 
 function validateRequestForm(form) {
@@ -265,6 +232,7 @@ function App() {
   const pathHistoryRef = useRef([]);
   const [requests, setRequests] = useState([]);
   const [processing, setProcessing] = useState({});
+  const [electronicReleaseLinks, setElectronicReleaseLinks] = useState({});
   const [closures, setClosures] = useState({});
   const [settingsSnapshot, setSettingsSnapshot] = useState({ branches: [], departments: [], categories: [] });
   const [incidents, setIncidents] = useState([]);
@@ -311,6 +279,7 @@ function App() {
       setUsers(normalizeLoadedUsers(data.users || []));
       setRequests(data.requests || []);
       setProcessing(data.processing || {});
+      setElectronicReleaseLinks(data.electronicReleaseLinks || {});
       setClosures(data.closures || {});
       setIncidents(data.incidents || []);
       setAuditLogs(data.auditLogs || []);
@@ -339,15 +308,29 @@ function App() {
       }
       const databaseState = await loadSupabaseAppData().catch(() => null);
       if (cancelled) return;
-      const nextState = databaseState || buildFallbackSnapshot(user);
-      const mergedState = {
-        ...nextState,
-        users: mergeLoadedUsers(databaseState?.users || nextState.users || []),
-        branches: Array.isArray(databaseState?.branches) ? databaseState.branches : [],
-        departments: Array.isArray(databaseState?.departments) ? databaseState.departments : [],
-        categories: Array.isArray(databaseState?.categories) ? databaseState.categories : [],
-      };
-      await applyLoadedData(mergedState);
+      if (!databaseState) {
+        await applyLoadedData({
+          users: [],
+          requests: [],
+          processing: {},
+          electronicReleaseLinks: {},
+          closures: {},
+          incidents: [],
+          auditLogs: [],
+          settings: normalizeLoadedSettings({}),
+          branches: [],
+          departments: [],
+          categories: [],
+        });
+        return;
+      }
+      await applyLoadedData({
+        ...databaseState,
+        users: normalizeLoadedUsers(databaseState.users || []),
+        branches: Array.isArray(databaseState.branches) ? databaseState.branches : [],
+        departments: Array.isArray(databaseState.departments) ? databaseState.departments : [],
+        categories: Array.isArray(databaseState.categories) ? databaseState.categories : [],
+      });
     };
 
     init();
@@ -360,15 +343,29 @@ function App() {
           setCurrentUserId(session.user.id);
           const databaseState = await loadSupabaseAppData().catch(() => null);
           if (cancelled) return;
-          const nextState = databaseState || buildFallbackSnapshot(session.user);
-          const mergedState = {
-            ...nextState,
-            users: mergeLoadedUsers(databaseState?.users || nextState.users || []),
-            branches: Array.isArray(databaseState?.branches) ? databaseState.branches : [],
-            departments: Array.isArray(databaseState?.departments) ? databaseState.departments : [],
-            categories: Array.isArray(databaseState?.categories) ? databaseState.categories : [],
-          };
-          await applyLoadedData(mergedState);
+          if (!databaseState) {
+            await applyLoadedData({
+              users: [],
+          requests: [],
+          processing: {},
+          electronicReleaseLinks: {},
+          closures: {},
+              incidents: [],
+              auditLogs: [],
+              settings: normalizeLoadedSettings({}),
+              branches: [],
+              departments: [],
+              categories: [],
+            });
+            return;
+          }
+          await applyLoadedData({
+            ...databaseState,
+            users: normalizeLoadedUsers(databaseState.users || []),
+            branches: Array.isArray(databaseState.branches) ? databaseState.branches : [],
+            departments: Array.isArray(databaseState.departments) ? databaseState.departments : [],
+            categories: Array.isArray(databaseState.categories) ? databaseState.categories : [],
+          });
           return;
         }
         if (!manualLogoutRef.current) {
@@ -487,9 +484,12 @@ function App() {
     if (validationErrors.length) return validationErrors;
 
     const { approverId, approverName } = await resolveApproverForRequest(currentUser.role, currentUser.branch, form.confidentialityLevel);
+    const target = requestId ? requests.find((item) => item.id === requestId) : null;
+    if (requestId && target?.status !== 'Draft') {
+      return ['Only draft requests can be edited.'];
+    }
 
     if (requestId) {
-      const target = requests.find((item) => item.id === requestId);
       const nextItem = target ? {
         ...target,
         ...form,
@@ -523,7 +523,7 @@ function App() {
     const next = {
       ...form,
       id: crypto.randomUUID(),
-      requestNo: generateRequestNo(requests),
+      requestNo: '',
       requestorId: currentUser.id,
       requestorName: currentUser.name,
       requestDate: today(),
@@ -537,11 +537,12 @@ function App() {
       status: 'Pending Approval',
     };
     if (supabaseConfig.isConfigured && supabase) {
-      const { error } = await createRequestRecord(next);
+      const { data, error } = await createRequestRecord(next);
       if (error) {
         console.error('Failed to save request:', error);
         return [readErrorMessage(error, 'Submit request failed.')];
       }
+      next.requestNo = data?.request_no || data?.requestNo || next.requestNo;
     }
     setRequests((items) => [next, ...items]);
     void addAuditLog(next.id, 'Submitted request', 'Draft', 'Pending Approval', next.purpose);
@@ -552,6 +553,10 @@ function App() {
   const saveDraftRequest = async (form, requestId = null) => {
     if (!currentUser) return ['No active user session.'];
     const { approverId, approverName } = await resolveApproverForRequest(currentUser.role, currentUser.branch, form.confidentialityLevel);
+    const target = requestId ? requests.find((item) => item.id === requestId) : null;
+    if (requestId && target?.status !== 'Draft') {
+      return ['Only draft requests can be edited.'];
+    }
     const draftPayload = {
       ...form,
       requestorId: currentUser.id,
@@ -567,7 +572,6 @@ function App() {
     };
 
     if (requestId) {
-      const target = requests.find((item) => item.id === requestId);
       const nextItem = target ? { ...target, ...draftPayload } : null;
       if (nextItem && supabaseConfig.isConfigured && supabase) {
         const { error } = await saveRequestRecord(nextItem);
@@ -586,15 +590,16 @@ function App() {
     const next = {
       ...draftPayload,
       id: crypto.randomUUID(),
-      requestNo: generateRequestNo(requests),
+      requestNo: '',
       requestDate: today(),
     };
     if (supabaseConfig.isConfigured && supabase) {
-      const { error } = await createRequestRecord(next);
+      const { data, error } = await createRequestRecord(next);
       if (error) {
         console.error('Failed to save draft request:', error);
         return [readErrorMessage(error, 'Save draft failed.')];
       }
+      next.requestNo = data?.request_no || data?.requestNo || next.requestNo;
     }
     setRequests((items) => [next, ...items]);
     void addAuditLog(next.id, 'Saved draft', 'Draft', 'Draft', next.purpose || 'Draft saved');
@@ -705,7 +710,7 @@ function App() {
     );
   }
 
-  const pageProps = { currentUser, users, requests: visibleRequests, rawRequests: requests, processing, closures, incidents, auditLogs, setPath, submitRequest, updateRequestStatus, addAuditLog, setProcessing, setClosures, setIncidents, editingRequestId, setEditingRequestId, settingsSnapshot, departmentsList: settingsSnapshot.departments || departments };
+  const pageProps = { currentUser, users, requests: visibleRequests, rawRequests: requests, processing, electronicReleaseLinks, closures, incidents, auditLogs, setPath, submitRequest, updateRequestStatus, addAuditLog, setProcessing, setClosures, setIncidents, editingRequestId, setEditingRequestId, settingsSnapshot, departmentsList: settingsSnapshot.departments || departments };
 
   return (
     <div className={`app-shell ${theme} ${isMobileMenuOpen ? 'menu-open' : ''}`}>
@@ -1179,7 +1184,11 @@ function NewRequest({ currentUser, requests, submitRequest, saveDraftRequest, ed
   const initialForm = useMemo(() => ({ documentTitle: '', documentType: 'Physical', confidentialityLevel: 'Non Confidential', purpose: '', dateNeeded: today(), borrowReturnDueDate: today(), remarks: '', branch: currentUser.branch, department: currentUser.department, agreementAccepted: false }), [currentUser.branch, currentUser.department]);
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState([]);
-  const [editingRequest, setEditingRequest] = useState(null);
+  const editableRequest = useMemo(() => {
+    if (!editingRequestId) return null;
+    const request = requests.find((item) => item.id === editingRequestId) || null;
+    return request?.status === 'Draft' ? request : null;
+  }, [editingRequestId, requests]);
   const update = (key, value) => setForm((draft) => ({ ...draft, [key]: value }));
   const departmentOptions = useMemo(() => {
     const values = Array.isArray(departmentsList) ? departmentsList : [];
@@ -1189,44 +1198,42 @@ function NewRequest({ currentUser, requests, submitRequest, saveDraftRequest, ed
   const hasReturnDateWarning = form.borrowReturnDueDate && (form.borrowReturnDueDate < today() || form.borrowReturnDueDate < form.dateNeeded);
 
   React.useEffect(() => {
-    if (!editingRequestId) {
+    if (!editableRequest) {
       setForm(initialForm);
-      setEditingRequest(null);
+      if (editingRequestId && editingRequestId !== editableRequest?.id) {
+        setEditingRequestId(null);
+      }
       return;
     }
-    const editingRequest = requests.find((request) => request.id === editingRequestId);
-    setEditingRequest(editingRequest || null);
-    if (editingRequest) {
-      setForm({
-        documentTitle: editingRequest.documentTitle || '',
-        documentType: editingRequest.documentType || 'Physical',
-        confidentialityLevel: confidentialityLevels.includes(editingRequest.confidentialityLevel) ? editingRequest.confidentialityLevel : 'Non Confidential',
-        purpose: editingRequest.purpose || '',
-        dateNeeded: editingRequest.dateNeeded || today(),
-        borrowReturnDueDate: editingRequest.borrowReturnDueDate || editingRequest.dateNeeded || today(),
-        remarks: editingRequest.remarks || '',
-        branch: currentUser.branch,
-        department: editingRequest.department || currentUser.department,
-        agreementAccepted: Boolean(editingRequest.agreementAccepted),
-      });
-    }
-  }, [editingRequestId, initialForm, requests, currentUser.branch, currentUser.department]);
+    setForm({
+      documentTitle: editableRequest.documentTitle || '',
+      documentType: editableRequest.documentType || 'Physical',
+      confidentialityLevel: confidentialityLevels.includes(editableRequest.confidentialityLevel) ? editableRequest.confidentialityLevel : 'Non Confidential',
+      purpose: editableRequest.purpose || '',
+      dateNeeded: editableRequest.dateNeeded || today(),
+      borrowReturnDueDate: editableRequest.borrowReturnDueDate || editableRequest.dateNeeded || today(),
+      remarks: editableRequest.remarks || '',
+      branch: currentUser.branch,
+      department: editableRequest.department || currentUser.department,
+      agreementAccepted: Boolean(editableRequest.agreementAccepted),
+    });
+  }, [editableRequest, editingRequestId, initialForm, setEditingRequestId, currentUser.branch, currentUser.department]);
 
   const save = async () => {
-    const result = await submitRequest(form, editingRequestId);
+    const result = await submitRequest(form, editableRequest?.id || null);
     setErrors(result || []);
   };
 
   const saveDraft = async () => {
-    const result = await saveDraftRequest(form, editingRequestId);
+    const result = await saveDraftRequest(form, editableRequest?.id || null);
     setErrors(result || []);
   };
 
   return (
     <section className="page">
       <PageTitle
-        title={editingRequestId ? 'Edit and Resubmit Request' : 'New Document Retrieval Request'}
-        subtitle={editingRequestId ? 'Update the draft or approved request, then resend it to the assigned approver.' : 'Create a request, save it as a draft, or submit it for automatic routing to the correct approver.'}
+        title={editableRequest ? 'Edit and Resubmit Request' : 'New Document Retrieval Request'}
+        subtitle={editableRequest ? 'Update the draft and resend it to the assigned approver.' : 'Create a request, save it as a draft, or submit it for automatic routing to the correct approver.'}
       />
       {errors.length > 0 && <AlertList items={errors} />}
       {hasReturnDateWarning && <div className="alert due-warning">Warning: the return due date is outside the allowed date range.</div>}
@@ -1252,11 +1259,11 @@ function NewRequest({ currentUser, requests, submitRequest, saveDraftRequest, ed
       </div>
       <label className="agreement"><input type="checkbox" checked={form.agreementAccepted} onChange={(e) => update('agreementAccepted', e.target.checked)} /> I certify that the requested document will be used strictly for the approved purpose only and returned, deleted, or access-revoked on or before the approved return due date.</label>
       <div className="actions">
-        <button type="button" className="ghost" onClick={() => { void saveDraft(); }}>{editingRequestId ? 'Save Draft' : 'Save Draft'}</button>
-        <button type="button" disabled={!canSubmit} onClick={() => { void save(); }}>{editingRequestId ? 'Save and Resend' : 'Submit Request'}</button>
-        {editingRequestId && <button className="ghost" type="button" onClick={() => { setEditingRequestId(null); }}>Cancel Edit</button>}
+        <button type="button" className="ghost" onClick={() => { void saveDraft(); }}>Save Draft</button>
+        <button type="button" disabled={!canSubmit} onClick={() => { void save(); }}>{editableRequest ? 'Save and Resend' : 'Submit Request'}</button>
+        {editableRequest && <button className="ghost" type="button" onClick={() => { setEditingRequestId(null); }}>Cancel Edit</button>}
       </div>
-      {editingRequest && editingRequest.status === 'Draft' && <div className="alert">This request is currently a draft. You can keep editing it until you submit it again.</div>}
+      {editableRequest && <div className="alert">This request is currently a draft. You can keep editing it until you submit it again.</div>}
     </section>
   );
 }
@@ -1277,30 +1284,31 @@ function RequestList({ title, requests, setPath, allowManage = false, onEditRequ
 
 function RequestTable({ title, requests, setPath, showActions = false, onEditRequest, onWithdrawRequest, onDeleteRequest }) {
   return <div className="table-card">{title && <h3>{title}</h3>}<table><thead><tr><th>Request No.</th><th>Document</th><th>Type</th><th>Confidentiality</th><th>Status</th><th>Date Needed</th><th>Return Due Date</th>{showActions && <th>Actions</th>}</tr></thead><tbody>{requests.length ? requests.map((request) => {
-    const canManageRequest = ['Draft', 'Pending Approval', 'Rejected'].includes(request.status);
-    const primaryActionLabel = request.status === 'Draft' ? 'Continue Draft' : request.status === 'Rejected' ? 'Revise' : 'Edit';
-    const secondaryActionLabel = request.status === 'Pending Approval' ? 'Save Draft' : 'Delete';
+    const canManageRequest = request.status === 'Draft';
+    const primaryActionLabel = 'Continue Draft';
+    const secondaryActionLabel = 'Delete';
     const dueWarning = hasDueDateWarning(request);
-    return <tr key={request.id} onClick={() => setPath?.(`/requests/${request.id}`)}><td>{request.requestNo}</td><td>{request.documentTitle}</td><td>{request.documentType}</td><td>{request.confidentialityLevel}</td><td><span data-variant={getStatusBadgeVariant(request.computedStatus || request.status)} className={statusClass(request.computedStatus || request.status)}>{request.computedStatus || request.status}</span></td><td>{request.dateNeeded}</td><td className={dueWarning ? 'due-date-cell warning' : 'due-date-cell'}>{dueWarning ? 'Warning ! ' : ''}{request.borrowReturnDueDate || '-'}</td>{showActions && <td className="actions-cell" onClick={(event) => event.stopPropagation()}>{canManageRequest ? <><button className="secondary small" type="button" onClick={() => onEditRequest?.(request)}>{primaryActionLabel}</button><button className="danger small" type="button" onClick={() => request.status === 'Pending Approval' ? onWithdrawRequest?.(request.id) : onDeleteRequest?.(request.id)}>{secondaryActionLabel}</button></> : <span className="helper-text">View only</span>}</td>}</tr>;
+    return <tr key={request.id} onClick={() => setPath?.(`/requests/${request.id}`)}><td>{request.requestNo}</td><td>{request.documentTitle}</td><td>{request.documentType}</td><td>{request.confidentialityLevel}</td><td><span data-variant={getStatusBadgeVariant(request.computedStatus || request.status)} className={statusClass(request.computedStatus || request.status)}>{request.computedStatus || request.status}</span></td><td>{request.dateNeeded}</td><td className={dueWarning ? 'due-date-cell warning' : 'due-date-cell'}>{dueWarning ? 'Warning ! ' : ''}{request.borrowReturnDueDate || '-'}</td>{showActions && <td className="actions-cell" onClick={(event) => event.stopPropagation()}>{canManageRequest ? <><button className="secondary small" type="button" onClick={() => onEditRequest?.(request)}>{primaryActionLabel}</button><button className="danger small" type="button" onClick={() => onDeleteRequest?.(request.id)}>{secondaryActionLabel}</button></> : <span className="helper-text">View only</span>}</td>}</tr>;
   }) : <tr><td colSpan={showActions ? 8 : 7} className="empty">No records found.</td></tr>}</tbody></table></div>;
 }
-function RequestDetails({ request, users, processing, closures, incidents, auditLogs, currentUser, setPath, setEditingRequestId }) {
+function RequestDetails({ request, users, processing, electronicReleaseLinks, closures, incidents, auditLogs, currentUser, setPath, setEditingRequestId }) {
   if (!request) return <Empty message="Request not found." />;
   const approver = request.currentApproverName || users.find((user) => user.id === request.currentApprover)?.name;
   const requestProcessing = processing[request.id] || {};
+  const requestReleaseLink = electronicReleaseLinks[request.id] || null;
   const closure = closures[request.id] || {};
   const requestIncidents = incidents.filter((incident) => incident.requestId === request.id);
   const approvalLogs = auditLogs.filter((log) => log.requestId === request.id && /approved|rejected|forwarded/i.test(log.action));
-  const processingItems = Object.entries(requestProcessing).map(([key, value]) => {
-    if (key === 'electronicReleaseReference' && !canViewReleaseReferences(currentUser, request)) return [key, 'Restricted'];
-    return [key, value];
-  });
+  const processingItems = Object.entries(requestProcessing).filter(([key]) => key !== 'electronicReleaseReference');
+  const releaseLinkItems = request.documentType === 'Electronic' && requestReleaseLink && canViewReleaseReferences(currentUser, request)
+    ? [['Electronic Release Link', requestReleaseLink.electronicReleaseReference]]
+    : [];
   const canProcess = ['archivist', ...adminRoles].includes(currentUser.role);
   const canClose = ['archivist', ...adminRoles].includes(currentUser.role) || request.requestorId === currentUser.id;
   const canCreateIncident = ['archivist', ...adminRoles, 'dpo', 'ceo'].includes(currentUser.role);
   const canEditDraft = request.status === 'Draft' && request.requestorId === currentUser.id;
 
-  return <section className="page"><PageTitle title={request.requestNo} subtitle={request.documentTitle} /><div className="detail-grid"><InfoCard title="Request Information" items={[['Requestor', request.requestorName], ['Branch', request.branch], ['Department', request.department], ['Document Type', request.documentType], ['Confidentiality', request.confidentialityLevel], ['Purpose', request.purpose], ['Date Needed', request.dateNeeded], ['Return Due Date', request.borrowReturnDueDate], ['Current Approver', approver || 'Not assigned'], ['Status', request.computedStatus || request.status]]} /><InfoCard title="Approval History" items={approvalLogs.length ? approvalLogs.map((log) => [log.createdAt, `${log.action}: ${log.remarks || log.newStatus}`]) : [['Status', 'No approval history yet']]} /><InfoCard title="Archivist Processing / Release" items={processingItems.length ? processingItems : [['Status', 'No processing record yet']]} /><InfoCard title="Return / Closure" items={Object.entries(closure).length ? Object.entries(closure) : [['Status', 'Not closed']]} /><InfoCard title="Incident Reports" items={requestIncidents.length ? requestIncidents.map((incident) => [incident.incidentType, incident.status]) : [['Status', 'No incidents']]} /></div><div className="actions">{canEditDraft && <button className="secondary" onClick={() => { setEditingRequestId(request.id); setPath('/requests/new'); }}>Edit Draft and Resend</button>}{canClose && <button onClick={() => setPath(`/requests/${request.id}/closure`)}>Return / Closure</button>}{canProcess && <button className="secondary" onClick={() => setPath(`/archivist/${request.id}/process`)}>Archivist Processing</button>}{canCreateIncident && <button className="ghost" onClick={() => setPath('/incidents/new')}>Create Incident</button>}</div><AuditTrailTable logs={auditLogs.filter((log) => log.requestId === request.id)} users={users} setPath={setPath} /></section>;
+  return <section className="page"><PageTitle title={request.requestNo} subtitle={request.documentTitle} /><div className="detail-grid"><InfoCard title="Request Information" items={[['Requestor', request.requestorName], ['Branch', request.branch], ['Department', request.department], ['Document Type', request.documentType], ['Confidentiality', request.confidentialityLevel], ['Purpose', request.purpose], ['Date Needed', request.dateNeeded], ['Return Due Date', request.borrowReturnDueDate], ['Current Approver', approver || 'Not assigned'], ['Status', request.computedStatus || request.status]]} /><InfoCard title="Approval History" items={approvalLogs.length ? approvalLogs.map((log) => [log.createdAt, `${log.action}: ${log.remarks || log.newStatus}`]) : [['Status', 'No approval history yet']]} />{releaseLinkItems.length > 0 && <InfoCard title="Electronic Release" items={releaseLinkItems} />}<InfoCard title="Archivist Processing / Release" items={processingItems.length ? processingItems : [['Status', 'No processing record yet']]} /><InfoCard title="Return / Closure" items={Object.entries(closure).length ? Object.entries(closure) : [['Status', 'Not closed']]} /><InfoCard title="Incident Reports" items={requestIncidents.length ? requestIncidents.map((incident) => [incident.incidentType, incident.status]) : [['Status', 'No incidents']]} /></div><div className="actions">{canEditDraft && <button className="secondary" onClick={() => { setEditingRequestId(request.id); setPath('/requests/new'); }}>Edit Draft and Resend</button>}{canClose && <button onClick={() => setPath(`/requests/${request.id}/closure`)}>Return / Closure</button>}{canProcess && <button className="secondary" onClick={() => setPath(`/archivist/${request.id}/process`)}>Archivist Processing</button>}{canCreateIncident && <button className="ghost" onClick={() => setPath('/incidents/new')}>Create Incident</button>}</div><AuditTrailTable logs={auditLogs.filter((log) => log.requestId === request.id)} users={users} setPath={setPath} /></section>;
 }
 function InfoCard({ title, items }) {
   return <article className="info-card"><h3>{title}</h3>{items.map(([key, value]) => {
@@ -1397,6 +1405,14 @@ function ArchivistProcess({ request, currentUser, processing, setProcessing, upd
     const nextRecord = { ...form, electronicReleaseReference, archivistId: currentUser.id, archivistName: currentUser.name };
     setProcessing((records) => ({ ...records, [request.id]: nextRecord }));
     void saveProcessingRecord(request.id, nextRecord).catch((error) => console.error('Failed to save processing record:', error));
+    if (request.documentType === 'Electronic') {
+      void saveElectronicReleaseLinkRecord(request.id, {
+        electronicReleaseReference,
+        releasedBy: currentUser.id,
+        releasedByName: currentUser.name,
+        releasedAt: new Date().toISOString(),
+      }).catch((error) => console.error('Failed to save electronic release link:', error));
+    }
     updateRequestStatus(request.id, 'Released', 'Released document', form.releaseRemarks, { assignedArchivistId: currentUser.id, assignedArchivistName: currentUser.name });
     setPath('/archivist');
   };
@@ -1601,7 +1617,6 @@ function Users({ users, setUsers, currentUserId, currentUser, branchesList, depa
       email,
       branch: draft.branch?.trim() || target.branch,
       department: nextRole === 'ceo' ? 'All' : (draft.department?.trim() || target.department),
-      position: draft.position?.trim() || target.position || '',
       role: nextRole,
       status: nextStatus,
       avatar_url: avatar,
@@ -1634,7 +1649,6 @@ function Users({ users, setUsers, currentUserId, currentUser, branchesList, depa
           role: nextProfile.role,
           branch: nextProfile.branch,
           department: nextProfile.department,
-          position: nextProfile.position,
         };
       }));
       setErrors([]);
@@ -1650,7 +1664,7 @@ function Users({ users, setUsers, currentUserId, currentUser, branchesList, depa
     setNewUser((current) => ({
       ...current,
       role: value,
-      department: value === 'ceo' ? 'All' : current.department === 'All' ? 'Savings' : current.department,
+      department: value === 'ceo' ? 'All' : current.department === 'All' ? defaultDepartment : current.department,
     }));
   };
 
@@ -1855,7 +1869,6 @@ function Users({ users, setUsers, currentUserId, currentUser, branchesList, depa
               <Field label="Full Name" value={draft.name || ''} onChange={(value) => setDraft((current) => ({ ...current, name: value }))} />
               <Field label="Branch" type="select" value={draft.branch || defaultBranch} options={branchOptions} onChange={(value) => setDraft((current) => ({ ...current, branch: value }))} />
               <Field label="Email" type="email" value={draft.email || ''} onChange={(value) => setDraft((current) => ({ ...current, email: value }))} />
-              <Field label="Position" value={draft.position || ''} onChange={(value) => setDraft((current) => ({ ...current, position: value }))} />
               <Field label="Role" type="select" value={draft.role || 'requestor'} options={Object.keys(roles)} onChange={handleDraftRoleChange} />
               <Field label="Status" type="select" value={draft.status || 'Active'} options={['Active', 'Inactive']} onChange={(value) => setDraft((current) => ({ ...current, status: value }))} />
               <Field label="Department" type="select" value={draft.role === 'ceo' ? 'All' : (draft.department || defaultDepartment)} options={draft.role === 'ceo' ? ['All'] : departmentOptions} readOnly={draft.role === 'ceo'} onChange={(value) => setDraft((current) => ({ ...current, department: value }))} />

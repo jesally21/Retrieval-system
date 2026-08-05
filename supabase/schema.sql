@@ -1,5 +1,10 @@
 create extension if not exists "pgcrypto";
 
+-- Runtime note:
+-- The web client expects Supabase auth env vars to be available before login.
+-- Set REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY in the deployment
+-- environment so the runtime env bootstrap can initialize authentication safely.
+
 create table if not exists public.branches (
   id uuid primary key default gen_random_uuid(),
   name text not null unique,
@@ -153,6 +158,17 @@ create table if not exists public.archivist_processing (
   access_revoked boolean not null default false,
   deletion_confirmation_required boolean not null default false,
   release_remarks text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.electronic_release_links (
+  id uuid primary key default gen_random_uuid(),
+  request_id uuid not null unique references public.document_requests(id) on delete cascade,
+  electronic_release_reference text not null,
+  released_by uuid references public.profiles(id),
+  released_by_name text,
+  released_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -344,6 +360,7 @@ security definer
 set search_path = public
 as $$
 begin
+  p_request := p_request - 'id';
   return public.save_document_request(p_request);
 end;
 $$;
@@ -363,7 +380,7 @@ declare
   resolved_approver record;
   resolved_current_approver_id uuid := nullif(trim(coalesce(p_request->>'current_approver_id', '')), '')::uuid;
   resolved_current_approver_name text := nullif(trim(coalesce(p_request->>'current_approver_name', '')), '');
-  resolved_branch text := coalesce(nullif(trim(p_request->>'branch'), ''), 'Head Office');
+  resolved_branch text := nullif(trim(coalesce(p_request->>'branch', '')), '');
   resolved_confidentiality text := coalesce(nullif(trim(p_request->>'confidentiality_level'), ''), 'Normal');
 begin
   if auth.uid() is null then
@@ -383,6 +400,10 @@ begin
     raise exception 'Requestor profile not found.';
   end if;
 
+  if resolved_branch is null then
+    resolved_branch := nullif(trim(coalesce(requestor_profile.branch, '')), '');
+  end if;
+
   if request_id is null then
     if requestor_id <> auth.uid() then
       raise exception 'Requestor mismatch.';
@@ -393,13 +414,7 @@ begin
     end if;
   else
     if requestor_id = auth.uid() then
-      if not exists (
-        select 1
-        from public.document_requests dr
-        where dr.id = request_id
-          and dr.requestor_id = auth.uid()
-          and dr.status in ('Draft', 'Needs Clarification', 'Pending Approval')
-      ) then
+      if not public.can_edit_own_request(request_id) then
         raise exception 'Request cannot be edited in its current state.';
       end if;
     elsif not (public.can_approve_request(request_id) or public.is_archivist() or public.is_superadmin()) then
@@ -598,6 +613,48 @@ begin
     access_revoked = excluded.access_revoked,
     deletion_confirmation_required = excluded.deletion_confirmation_required,
     release_remarks = excluded.release_remarks,
+    updated_at = now()
+  returning * into saved_record;
+
+  return saved_record;
+end;
+$$;
+
+create or replace function public.save_electronic_release_link(
+  p_request_id uuid,
+  p_record jsonb
+)
+returns public.electronic_release_links
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  saved_record public.electronic_release_links%rowtype;
+begin
+  if p_request_id is null then
+    raise exception 'Request id is required.';
+  end if;
+
+  insert into public.electronic_release_links (
+    request_id,
+    electronic_release_reference,
+    released_by,
+    released_by_name,
+    released_at
+  )
+  values (
+    p_request_id,
+    nullif(trim(coalesce(p_record->>'electronic_release_reference', '')), ''),
+    nullif(trim(coalesce(p_record->>'released_by', '')), '')::uuid,
+    nullif(trim(coalesce(p_record->>'released_by_name', '')), ''),
+    nullif(trim(coalesce(p_record->>'released_at', '')), '')::timestamptz
+  )
+  on conflict (request_id) do update set
+    electronic_release_reference = excluded.electronic_release_reference,
+    released_by = excluded.released_by,
+    released_by_name = excluded.released_by_name,
+    released_at = excluded.released_at,
     updated_at = now()
   returning * into saved_record;
 
@@ -852,7 +909,11 @@ set search_path = public
 as $$
 declare
   metadata jsonb := coalesce(new.raw_user_meta_data, '{}'::jsonb);
-  requested_role text := coalesce(nullif(trim(metadata->>'role'), ''), 'requestor');
+  requested_role text := coalesce(
+    nullif(trim(metadata->>'role'), ''),
+    nullif(trim(coalesce(new.raw_app_meta_data, '{}'::jsonb)->>'role'), ''),
+    'requestor'
+  );
   requested_status text := coalesce(nullif(trim(metadata->>'status'), ''), 'Active');
   requested_created_by uuid := null;
 begin
@@ -929,7 +990,7 @@ begin
     created_by = excluded.created_by,
     created_by_name = excluded.created_by_name,
     status = excluded.status,
-    role = excluded.role,
+    role = coalesce(excluded.role, public.profiles.role),
     is_active = excluded.is_active,
     updated_at = now();
 
@@ -988,9 +1049,21 @@ begin
       else 'Active'
     end,
     case
-      when coalesce(nullif(trim(u.raw_user_meta_data->>'role'), ''), 'requestor') = 'admin' then 'superadmin'
-      when coalesce(nullif(trim(u.raw_user_meta_data->>'role'), ''), 'requestor') = 'sacd_head' then 'department_head'
-      when coalesce(nullif(trim(u.raw_user_meta_data->>'role'), ''), 'requestor') in (
+      when coalesce(
+        nullif(trim(u.raw_user_meta_data->>'role'), ''),
+        nullif(trim(coalesce(u.raw_app_meta_data, '{}'::jsonb)->>'role'), ''),
+        'requestor'
+      ) = 'admin' then 'superadmin'
+      when coalesce(
+        nullif(trim(u.raw_user_meta_data->>'role'), ''),
+        nullif(trim(coalesce(u.raw_app_meta_data, '{}'::jsonb)->>'role'), ''),
+        'requestor'
+      ) = 'sacd_head' then 'department_head'
+      when coalesce(
+        nullif(trim(u.raw_user_meta_data->>'role'), ''),
+        nullif(trim(coalesce(u.raw_app_meta_data, '{}'::jsonb)->>'role'), ''),
+        'requestor'
+      ) in (
         'requestor',
         'branch_head',
         'department_head',
@@ -998,7 +1071,11 @@ begin
         'ceo',
         'archivist',
         'superadmin'
-      ) then coalesce(nullif(trim(u.raw_user_meta_data->>'role'), ''), 'requestor')
+      ) then coalesce(
+        nullif(trim(u.raw_user_meta_data->>'role'), ''),
+        nullif(trim(coalesce(u.raw_app_meta_data, '{}'::jsonb)->>'role'), ''),
+        'requestor'
+      )
       else 'requestor'
     end,
     coalesce(nullif(trim(u.raw_user_meta_data->>'status'), ''), 'Active') = 'Active'
@@ -1013,7 +1090,7 @@ begin
     created_by = excluded.created_by,
     created_by_name = excluded.created_by_name,
     status = excluded.status,
-    role = excluded.role,
+    role = coalesce(excluded.role, public.profiles.role),
     is_active = excluded.is_active,
     updated_at = now();
 end;
@@ -1122,6 +1199,22 @@ as $$
   )
 $$;
 
+create or replace function public.can_edit_own_request(target_request_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1
+    from public.document_requests dr
+    where dr.id = target_request_id
+      and dr.requestor_id = auth.uid()
+      and dr.status = 'Draft'
+  )
+$$;
+
 create or replace function public.resolve_request_approver(
   p_requestor_role text,
   p_branch text,
@@ -1175,7 +1268,9 @@ begin
       end if;
     elsif p_requestor_role = 'branch_head' then
       resolved_approver_role := 'department_head';
-    elsif p_requestor_role in ('department_head', 'dpo', 'ceo') then
+    elsif p_requestor_role = 'department_head' then
+      resolved_approver_role := 'ceo';
+    elsif p_requestor_role in ('dpo', 'ceo') then
       resolved_approver_role := 'superadmin';
     end if;
   end if;
@@ -1276,6 +1371,8 @@ drop trigger if exists log_request_status_change on public.document_requests;
 create trigger log_request_status_change after insert or update on public.document_requests for each row execute function public.log_request_status_change();
 drop trigger if exists set_updated_at_archivist_processing on public.archivist_processing;
 create trigger set_updated_at_archivist_processing before update on public.archivist_processing for each row execute function public.set_updated_at();
+drop trigger if exists set_updated_at_electronic_release_links on public.electronic_release_links;
+create trigger set_updated_at_electronic_release_links before update on public.electronic_release_links for each row execute function public.set_updated_at();
 drop trigger if exists set_updated_at_request_closures on public.request_closures;
 create trigger set_updated_at_request_closures before update on public.request_closures for each row execute function public.set_updated_at();
 drop trigger if exists set_updated_at_incident_reports on public.incident_reports;
@@ -1301,12 +1398,56 @@ create index if not exists request_attachments_request_idx on public.request_att
 create index if not exists audit_logs_request_idx on public.audit_logs(request_id);
 create index if not exists audit_logs_created_at_idx on public.audit_logs(created_at desc);
 
+delete from public.branches where name not in (
+  'Barbaza',
+  'Culasi',
+  'Sibalom',
+  'San Jose',
+  'Balasan',
+  'Barotac Viejo',
+  'Caticlan',
+  'Molo',
+  'Kalibo',
+  'Janiuay',
+  'Calinog',
+  'Sara',
+  'Pres. Roxas',
+  'Altavas'
+);
+
 insert into public.branches (name) values
-  ('Culasi'), ('Sibalom'), ('San Jose'), ('Balasan'), ('Barotac Viejo'), ('Molo'), ('Janiuay'), ('Caticlan'), ('Kalibo'), ('San Remigio'), ('Head Office'), ('Barbaza'), ('Hamtic'), ('Laua-an')
+  ('Barbaza'),
+  ('Culasi'),
+  ('Sibalom'),
+  ('San Jose'),
+  ('Balasan'),
+  ('Barotac Viejo'),
+  ('Caticlan'),
+  ('Molo'),
+  ('Kalibo'),
+  ('Janiuay'),
+  ('Calinog'),
+  ('Sara'),
+  ('Pres. Roxas'),
+  ('Altavas')
 on conflict (name) do nothing;
 
+delete from public.departments where name not in (
+  'ICT Department',
+  'Membership & Marketing Department',
+  'Savings & Credit Department',
+  'Finance & Accounting Department',
+  'Human Resources & Administration Department',
+  'Internal Audit Department'
+);
+
 insert into public.departments (name) values
-  ('ICT Department'), ('HRAD'), ('Accounting'), ('Audit'), ('SACD'), ('Lending'), ('Savings'), ('Broadband Division'), ('Records / Archive'), ('Branch Operations'), ('Compliance'), ('Executive')
+  ('ICT Department'),
+  ('Membership & Marketing Department'),
+  ('Savings & Credit Department'),
+  ('Finance & Accounting Department'),
+  ('Human Resources & Administration Department'),
+  ('Internal Audit Department')
 on conflict (name) do nothing;
 
 insert into public.document_categories (name, description) values
@@ -1340,6 +1481,7 @@ alter table public.approval_routes enable row level security;
 alter table public.document_requests enable row level security;
 alter table public.approval_actions enable row level security;
 alter table public.archivist_processing enable row level security;
+alter table public.electronic_release_links enable row level security;
 alter table public.request_closures enable row level security;
 alter table public.incident_reports enable row level security;
 alter table public.request_attachments enable row level security;
@@ -1361,6 +1503,7 @@ grant select, insert, update, delete on public.approval_routes to authenticated,
 grant select, insert, update, delete on public.document_requests to authenticated, service_role;
 grant select, insert, update, delete on public.approval_actions to authenticated, service_role;
 grant select, insert, update, delete on public.archivist_processing to authenticated, service_role;
+grant select, insert, update, delete on public.electronic_release_links to authenticated, service_role;
 grant select, insert, update, delete on public.request_closures to authenticated, service_role;
 grant select, insert, update, delete on public.incident_reports to authenticated, service_role;
 grant select, insert, update, delete on public.request_attachments to authenticated, service_role;
@@ -1373,9 +1516,11 @@ grant execute on function public.is_admin() to anon, authenticated, service_role
 grant execute on function public.is_superadmin() to anon, authenticated, service_role;
 grant execute on function public.is_archivist() to anon, authenticated, service_role;
 grant execute on function public.is_executive_or_privacy() to anon, authenticated, service_role;
+grant execute on function public.can_edit_own_request(uuid) to anon, authenticated, service_role;
 grant execute on function public.create_document_request(jsonb) to authenticated, service_role;
 grant execute on function public.save_document_request(jsonb) to authenticated, service_role;
 grant execute on function public.save_archivist_processing(uuid, jsonb) to authenticated, service_role;
+grant execute on function public.save_electronic_release_link(uuid, jsonb) to authenticated, service_role;
 grant execute on function public.save_request_closure(uuid, jsonb) to authenticated, service_role;
 grant execute on function public.save_incident_report(jsonb) to authenticated, service_role;
 grant execute on function public.delete_user_account(uuid) to authenticated, service_role;
@@ -1434,7 +1579,7 @@ drop policy if exists "request visibility by ownership routing and role" on publ
 create policy "request visibility by ownership routing and role" on public.document_requests for select using (public.can_view_request(id));
 drop policy if exists "requestors update editable own requests" on public.document_requests;
 create policy "requestors update editable own requests" on public.document_requests for update using (
-  requestor_id = auth.uid() and status in ('Draft', 'Needs Clarification', 'Pending Approval')
+  public.can_edit_own_request(id)
 ) with check (requestor_id = auth.uid());
 drop policy if exists "requestors delete own requests" on public.document_requests;
 create policy "requestors delete own requests" on public.document_requests for delete using (requestor_id = auth.uid());
@@ -1457,6 +1602,24 @@ drop policy if exists "archivist processing visible to authorized users" on publ
 create policy "archivist processing visible to authorized users" on public.archivist_processing for select using (public.can_view_request(request_id) or public.is_archivist());
 drop policy if exists "archivists manage processing" on public.archivist_processing;
 create policy "archivists manage processing" on public.archivist_processing for all using (public.is_archivist() or public.is_admin()) with check (public.is_archivist() or public.is_admin());
+
+drop policy if exists "electronic release links visible to request participants" on public.electronic_release_links;
+create policy "electronic release links visible to request participants" on public.electronic_release_links for select using (
+  public.is_superadmin()
+  or public.is_archivist()
+  or exists (
+    select 1
+    from public.document_requests dr
+    where dr.id = request_id
+      and dr.requestor_id = auth.uid()
+  )
+);
+drop policy if exists "archivists manage electronic release links" on public.electronic_release_links;
+create policy "archivists manage electronic release links" on public.electronic_release_links for all using (
+  public.is_archivist() or public.is_superadmin()
+) with check (
+  public.is_archivist() or public.is_superadmin()
+);
 
 drop policy if exists "closures visible to authorized users" on public.request_closures;
 create policy "closures visible to authorized users" on public.request_closures for select using (public.can_view_request(request_id) or public.is_archivist());
