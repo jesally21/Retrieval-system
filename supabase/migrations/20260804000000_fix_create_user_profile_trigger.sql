@@ -5,7 +5,6 @@ alter table public.profiles add column if not exists position text;
 alter table public.profiles add column if not exists status text not null default 'Active';
 
 do $$
-language plpgsql
 begin
   if exists (
     select 1
@@ -43,7 +42,7 @@ begin
       )
     );
 
-end $$;
+end $$ language plpgsql;
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -226,10 +225,9 @@ after update on auth.users
 for each row execute function public.handle_new_user();
 
 do $$
-language plpgsql
 begin
   perform public.sync_auth_users_to_profiles();
-end $$;
+end $$ language plpgsql;
 
 grant usage on schema public to anon, authenticated, service_role;
 grant select, insert, update, delete on public.profiles to authenticated, service_role;
@@ -243,36 +241,4 @@ begin
     grant select, insert, update on public.profiles to supabase_auth_admin;
     grant execute on function public.handle_new_user() to supabase_auth_admin;
   end if;
-end $$;
-
-insert into public.branches (name) values
-  ('Culasi'),
-  ('Sibalom'),
-  ('San Jose'),
-  ('Balasan'),
-  ('Barotac Viejo'),
-  ('Molo'),
-  ('Janiuay'),
-  ('Caticlan'),
-  ('Kalibo'),
-  ('San Remigio'),
-  ('Head Office'),
-  ('Barbaza'),
-  ('Hamtic'),
-  ('Laua-an')
-on conflict (name) do nothing;
-
-insert into public.departments (name) values
-  ('ICT Department'),
-  ('HRAD'),
-  ('Accounting'),
-  ('Audit'),
-  ('SACD'),
-  ('Lending'),
-  ('Savings'),
-  ('Broadband Division'),
-  ('Records / Archive'),
-  ('Branch Operations'),
-  ('Compliance'),
-  ('Executive')
-on conflict (name) do nothing;
+end $$ language plpgsql;

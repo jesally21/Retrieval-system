@@ -187,6 +187,17 @@ async function fetchTable(table, select = '*', orderBy = 'created_at', ascending
   return data || [];
 }
 
+async function fetchSingleRow(table, id) {
+  const { data, error } = await supabase
+    .from(table)
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error) throw formatSupabaseError(error, `Failed to load ${table} row.`);
+  return data || null;
+}
+
 async function replaceTableRows(table, rows, key = 'id') {
   const { data: existing, error: existingError } = await supabase.from(table).select(key);
   if (existingError) throw formatSupabaseError(existingError, `Failed to read ${table}.`);
@@ -290,6 +301,18 @@ export async function loadSupabaseAppData() {
   };
 }
 
+export async function loadRequestRecord(requestId) {
+  if (!supabase || !requestId) return { data: null, error: new Error('Supabase is not configured.') };
+
+  try {
+    const row = await fetchSingleRow('document_requests', requestId);
+    if (!row) return { data: null, error: new Error('Request not found.') };
+    return { data: mapRequestRow(row), error: null };
+  } catch (error) {
+    return { data: null, error: formatSupabaseError(error, 'Failed to load request.') };
+  }
+}
+
 export async function syncProfiles(users) {
   if (!supabase) return;
   const rows = users.map((user) => ({
@@ -391,9 +414,12 @@ export async function createRequestRecord(request) {
   if (!supabase) return { data: null, error: new Error('Supabase is not configured.') };
   const row = buildRequestRow(request);
   delete row.id;
-  const { data, error } = await supabase.rpc('create_document_request', {
-    p_request: row,
-  });
+  const { data, error } = await supabase
+    .from('document_requests')
+    .insert(row)
+    .select()
+    .single();
+
   if (error) return { data: null, error: formatSupabaseError(error, 'Failed to create request.') };
   return { data, error: null };
 }
@@ -490,9 +516,12 @@ export async function saveIncidentRecord(record) {
 export async function saveRequestRecord(request) {
   if (!supabase) return { data: null, error: new Error('Supabase is not configured.') };
   const row = buildRequestRow(request);
-  const { data, error } = await supabase.rpc('save_document_request', {
-    p_request: row,
-  });
+  const { data, error } = await supabase
+    .from('document_requests')
+    .upsert(row, { onConflict: 'id' })
+    .select()
+    .single();
+
   if (error) return { data: null, error: formatSupabaseError(error, 'Failed to save request.') };
   return { data, error: null };
 }
@@ -522,14 +551,19 @@ export async function saveAuditLogRecord(log) {
 
 export async function resolveRequestApprover({ requestorRole, branch, confidentialityLevel }) {
   if (!supabase) return { data: null, error: new Error('Supabase is not configured.') };
-  const { data, error } = await supabase.rpc('resolve_request_approver', {
-    p_requestor_role: requestorRole,
-    p_branch: normalizeName(branch, ''),
-    p_confidentiality: confidentialityLevel,
-  });
-  if (error) return { data: null, error: formatSupabaseError(error, 'Failed to resolve approver.') };
-  const row = Array.isArray(data) ? data[0] : data;
-  return { data: row || null, error: null };
+  const normalizedConfidentiality = confidentialityLevel === 'Non Confidential' ? 'Normal' : confidentialityLevel;
+  try {
+    const { data, error } = await supabase.rpc('resolve_request_approver', {
+      p_requestor_role: requestorRole,
+      p_branch: normalizeName(branch, ''),
+      p_confidentiality: normalizedConfidentiality,
+    });
+    if (error) return { data: null, error: formatSupabaseError(error, 'Failed to resolve approver.') };
+    const row = Array.isArray(data) ? data[0] : data;
+    return { data: row || null, error: null };
+  } catch (error) {
+    return { data: null, error: formatSupabaseError(error, 'Failed to resolve approver.') };
+  }
 }
 
 export async function syncProcessing(processing) {

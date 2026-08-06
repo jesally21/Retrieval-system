@@ -1,6 +1,6 @@
 create extension if not exists "pgcrypto";
 
-create table public.profiles (
+create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   full_name text not null,
   email text not null unique,
@@ -28,7 +28,7 @@ create table public.profiles (
   updated_at timestamptz default now()
 );
 
-create table public.document_requests (
+create table if not exists public.document_requests (
   id uuid primary key default gen_random_uuid(),
   request_no text unique not null,
   requestor_id uuid references public.profiles(id),
@@ -62,7 +62,7 @@ create table public.document_requests (
   updated_at timestamptz default now()
 );
 
-create table public.archivist_processing (
+create table if not exists public.archivist_processing (
   id uuid primary key default gen_random_uuid(),
   request_id uuid references public.document_requests(id) on delete cascade,
   archivist_id uuid references public.profiles(id),
@@ -81,7 +81,7 @@ create table public.archivist_processing (
   updated_at timestamptz default now()
 );
 
-create table public.request_closures (
+create table if not exists public.request_closures (
   id uuid primary key default gen_random_uuid(),
   request_id uuid references public.document_requests(id) on delete cascade,
   date_returned date,
@@ -102,7 +102,7 @@ create table public.request_closures (
   updated_at timestamptz default now()
 );
 
-create table public.incident_reports (
+create table if not exists public.incident_reports (
   id uuid primary key default gen_random_uuid(),
   request_id uuid references public.document_requests(id),
   reported_by uuid references public.profiles(id),
@@ -114,7 +114,7 @@ create table public.incident_reports (
   updated_at timestamptz default now()
 );
 
-create table public.audit_logs (
+create table if not exists public.audit_logs (
   id uuid primary key default gen_random_uuid(),
   request_id uuid references public.document_requests(id),
   user_id uuid references public.profiles(id),
@@ -125,21 +125,21 @@ create table public.audit_logs (
   created_at timestamptz default now()
 );
 
-create table public.branches (
+create table if not exists public.branches (
   id uuid primary key default gen_random_uuid(),
   name text not null unique,
   is_active boolean default true,
   created_at timestamptz default now()
 );
 
-create table public.departments (
+create table if not exists public.departments (
   id uuid primary key default gen_random_uuid(),
   name text not null unique,
   is_active boolean default true,
   created_at timestamptz default now()
 );
 
-create table public.document_categories (
+create table if not exists public.document_categories (
   id uuid primary key default gen_random_uuid(),
   name text not null unique,
   description text,

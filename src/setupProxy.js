@@ -10,4 +10,13 @@ module.exports = function setupProxy(app) {
       logLevel: 'warn',
     }),
   );
+  app.use(
+    '/api/document-request-management',
+    createProxyMiddleware({
+      target: 'http://127.0.0.1:3001',
+      changeOrigin: true,
+      secure: false,
+      logLevel: 'warn',
+    }),
+  );
 };

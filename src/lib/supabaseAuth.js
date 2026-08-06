@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient';
+import { supabase, supabaseClients } from './supabaseClient';
 
 function formatSupabaseError(error, fallbackMessage = 'Supabase request failed.') {
   if (!error) return new Error(fallbackMessage);
@@ -43,13 +43,30 @@ function normalizeAuthFailure(error, fallbackMessage) {
   return formatSupabaseError(error, fallbackMessage);
 }
 
+function getSupabaseClients() {
+  if (Array.isArray(supabaseClients) && supabaseClients.length > 0) {
+    return supabaseClients;
+  }
+  return supabase ? [supabase] : [];
+}
+
 function getAdminApiUrls() {
   const configuredUrl = (process.env.REACT_APP_ADMIN_API_URL || window.__ENV__?.REACT_APP_ADMIN_API_URL || '').trim();
   const urls = [];
   if (configuredUrl) urls.push(configuredUrl);
   urls.push('/api/admin-user-management');
-  urls.push('http://127.0.0.1:3001/api/admin-user-management');
   return [...new Set(urls)];
+}
+
+async function readResponseError(response) {
+  const text = await response.text().catch(() => '');
+  if (!text) return '';
+  try {
+    const payload = JSON.parse(text);
+    return payload?.error || payload?.message || text;
+  } catch {
+    return text;
+  }
 }
 
 async function invokeAdminApi(body) {
@@ -69,7 +86,10 @@ async function invokeAdminApi(body) {
         body: JSON.stringify(body),
       });
 
-      const payload = await response.json().catch(() => null);
+      const payload = await response.json().catch(async () => {
+        const message = await readResponseError(response);
+        return message ? { error: message } : null;
+      });
       if (!response.ok) {
         const message = payload?.error || payload?.message || `Admin API request failed (${response.status}).`;
         if (response.status === 404) {
@@ -268,12 +288,26 @@ export async function getCurrentSessionUser() {
 
 export async function signInWithEmailPassword(email, password) {
   if (!supabase) return { data: null, error: new Error('Supabase is not configured.') };
-  try {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    return { data, error: error ? normalizeAuthFailure(error, 'Login failed.') : null };
-  } catch (error) {
-    return { data: null, error: normalizeAuthFailure(error, 'Login failed.') };
+  const clients = getSupabaseClients();
+  let lastError = null;
+
+  for (const client of clients) {
+    try {
+      const { data, error } = await client.auth.signInWithPassword({ email, password });
+      if (!error) return { data, error: null };
+      lastError = error;
+      if (!isRetryableConnectionError(error)) {
+        return { data: null, error: normalizeAuthFailure(error, 'Login failed.') };
+      }
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableConnectionError(error)) {
+        return { data: null, error: normalizeAuthFailure(error, 'Login failed.') };
+      }
+    }
   }
+
+  return { data: null, error: normalizeAuthFailure(lastError, 'Login failed.') };
 }
 
 export async function createUserAccount({ email, password, profile }) {

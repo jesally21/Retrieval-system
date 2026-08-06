@@ -10,11 +10,13 @@ declare
   requestor_id uuid := nullif(trim(coalesce(p_request->>'requestor_id', '')), '')::uuid;
   request_status text := coalesce(nullif(trim(p_request->>'status'), ''), 'Pending Approval');
   requestor_profile public.profiles%rowtype;
+  requestor_role text;
   resolved_approver record;
   resolved_current_approver_id uuid := nullif(trim(coalesce(p_request->>'current_approver_id', '')), '')::uuid;
   resolved_current_approver_name text := nullif(trim(coalesce(p_request->>'current_approver_name', '')), '');
-  resolved_branch text := coalesce(nullif(trim(p_request->>'branch'), ''), 'Head Office');
+  resolved_branch text := nullif(trim(coalesce(p_request->>'branch', '')), '');
   resolved_confidentiality text := coalesce(nullif(trim(p_request->>'confidentiality_level'), ''), 'Normal');
+  resolved_document_title text := nullif(trim(coalesce(p_request->>'document_title', '')), '');
 begin
   if auth.uid() is null then
     raise exception 'Not authenticated.';
@@ -31,6 +33,24 @@ begin
 
   if requestor_profile.id is null then
     raise exception 'Requestor profile not found.';
+  end if;
+
+  requestor_role := coalesce(nullif(trim(requestor_profile.role), ''), 'requestor');
+
+  if resolved_branch is null then
+    resolved_branch := nullif(trim(coalesce(requestor_profile.branch, '')), '');
+  end if;
+
+  if resolved_branch is null and requestor_role in ('department_head', 'dpo', 'ceo', 'archivist', 'superadmin') then
+    resolved_branch := 'Head Office';
+  end if;
+
+  if resolved_document_title is null then
+    raise exception 'Document title is required.';
+  end if;
+
+  if resolved_branch is null then
+    raise exception 'Branch is required.';
   end if;
 
   if request_id is null then
@@ -51,7 +71,12 @@ begin
     end if;
   end if;
 
-  if resolved_current_approver_id is null then
+  if request_status = 'Pending Approval' then
+    resolved_current_approver_id := null;
+    resolved_current_approver_name := null;
+  end if;
+
+  if resolved_current_approver_id is null and request_status in ('Draft', 'Pending Approval') then
     select *
       into resolved_approver
       from public.resolve_request_approver(
@@ -62,6 +87,9 @@ begin
       limit 1;
     resolved_current_approver_id := resolved_approver.approver_id;
     resolved_current_approver_name := coalesce(resolved_current_approver_name, resolved_approver.approver_name);
+    if resolved_current_approver_id is null then
+      raise exception 'No approver found for this request.';
+    end if;
   end if;
 
   insert into public.document_requests (
@@ -105,7 +133,7 @@ begin
     requestor_id,
     coalesce(nullif(trim(p_request->>'requestor_name'), ''), requestor_profile.full_name, ''),
     coalesce(nullif(trim(p_request->>'request_date'), '')::date, current_date),
-    coalesce(nullif(trim(p_request->>'document_title'), ''), 'Untitled'),
+    resolved_document_title,
     nullif(trim(p_request->>'document_reference_no'), ''),
     nullif(trim(p_request->>'document_category_id'), '')::uuid,
     coalesce(nullif(trim(p_request->>'document_type'), ''), 'Physical'),

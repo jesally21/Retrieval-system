@@ -16,11 +16,11 @@ import {
   loadSupabaseAppData,
   normalizeBranchName,
   normalizeRole,
-  resolveRequestApprover,
   saveAuditLogRecord,
   saveElectronicReleaseLinkRecord,
   saveClosureRecord,
   saveIncidentRecord,
+  loadRequestRecord,
   saveProcessingRecord,
   saveRequestRecord,
 } from './lib/supabaseData';
@@ -99,18 +99,53 @@ function mapAuthUserToProfile(user) {
   const metadata = user?.user_metadata || {};
   const name = metadata.full_name || metadata.name || user?.email || 'User';
   const role = normalizeRole(metadata.role || 'requestor');
+  const branch = normalizeBranchName(metadata.branch || '');
+  const resolvedBranch = branch || (['department_head', 'dpo', 'ceo', 'archivist', 'superadmin'].includes(role) ? 'Head Office' : '');
   return {
     id: user.id,
     name,
     email: user.email || '',
     role,
-    branch: normalizeBranchName(metadata.branch || ''),
+    branch: resolvedBranch,
     department: metadata.department || '',
     position: metadata.position || '',
     status: metadata.status || 'Active',
     avatar: metadata.avatar_url || getAvatarUrl(name),
     is_active: true,
     avatarCustom: Boolean(metadata.avatar_url),
+  };
+}
+
+async function loadAuthenticatedProfile(userId) {
+  if (!supabase || !userId) return null;
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, full_name, email, role, branch, department, position, status, avatar_url, is_active, created_by, created_by_name')
+    .eq('id', userId)
+    .single();
+
+  if (error || !data) return null;
+
+  const role = normalizeRole(data.role);
+  const branch = normalizeBranchName(data.branch || '');
+  const resolvedBranch = branch || (['department_head', 'dpo', 'ceo', 'archivist', 'superadmin'].includes(role) ? 'Head Office' : '');
+
+  return {
+    id: data.id,
+    name: data.full_name || data.email || 'User',
+    email: data.email || '',
+    role,
+    branch: resolvedBranch,
+    department: data.department || '',
+    position: data.position || '',
+    status: data.status || (data.is_active === false ? 'Inactive' : 'Active'),
+    avatar: data.avatar_url || getAvatarUrl(data.full_name || data.email || 'User'),
+    is_active: data.is_active !== false,
+    avatarCustom: Boolean(data.avatar_url),
+    createdAt: '',
+    createdBy: data.created_by || '',
+    createdByName: data.created_by_name || '',
   };
 }
 
@@ -124,27 +159,6 @@ export function getAvatarUrl(name) {
 
 function today() {
   return new Date().toISOString().slice(0, 10);
-}
-
-function determineApprover(profile, request, users) {
-  const requestBranch = request.branch || profile.branch;
-  if (request.confidentialityLevel === 'Confidential') {
-    return users.find((user) => user.role === 'dpo')?.id || users.find((user) => user.role === 'ceo')?.id || users.find((user) => user.role === 'superadmin')?.id || '';
-  }
-  if (profile.role === 'requestor') {
-    if (requestBranch === 'Head Office') {
-      return users.find((user) => user.role === 'department_head')?.id || users.find((user) => user.role === 'branch_head')?.id || '';
-    }
-    return users.find((user) => user.role === 'branch_head' && user.branch === requestBranch)?.id || users.find((user) => user.role === 'branch_head')?.id || users.find((user) => user.role === 'department_head')?.id || '';
-  }
-  if (profile.role === 'branch_head') return users.find((user) => user.role === 'department_head')?.id || users.find((user) => user.role === 'superadmin')?.id || '';
-  if (profile.role === 'department_head') return users.find((user) => user.role === 'ceo')?.id || users.find((user) => user.role === 'superadmin')?.id || users.find((user) => adminRoles.includes(user.role))?.id || '';
-  if (['dpo', 'ceo'].includes(profile.role)) return users.find((user) => user.role === 'superadmin')?.id || users.find((user) => adminRoles.includes(user.role))?.id || '';
-  return users.find((user) => adminRoles.includes(user.role))?.id || '';
-}
-
-function getUserNameById(users, id) {
-  return users.find((user) => user.id === id)?.name || '';
 }
 
 function hasOpenIncident(request, incidents = []) {
@@ -222,12 +236,22 @@ function validateRequestForm(form) {
   return errors;
 }
 
+function resolveRequestBranch(currentUser, formBranch = '') {
+  const branch = normalizeBranchName(formBranch || currentUser?.branch || '');
+  if (branch) return branch;
+  if (['department_head', 'dpo', 'ceo', 'archivist', 'superadmin'].includes(normalizeRole(currentUser?.role))) {
+    return 'Head Office';
+  }
+  return '';
+}
+
 function App() {
   const [users, setUsers] = useState([]);
   const [currentUserId, setCurrentUserId] = useState('');
   const [path, setPathState] = useState('/dashboard');
   const [theme, setTheme] = useState('dark');
   const [editingRequestId, setEditingRequestId] = useState(null);
+  const [requestDetailOverride, setRequestDetailOverride] = useState(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const pathHistoryRef = useRef([]);
   const [requests, setRequests] = useState([]);
@@ -239,8 +263,9 @@ function App() {
   const [auditLogs, setAuditLogs] = useState([]);
   const [authReady, setAuthReady] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [sessionProfile, setSessionProfile] = useState(null);
   const manualLogoutRef = useRef(false);
-  const currentUser = users.find((user) => user.id === currentUserId) || null;
+  const currentUser = users.find((user) => user.id === currentUserId) || sessionProfile || null;
   const setPath = useCallback((nextPath, options = {}) => {
     setPathState((currentPath) => {
       const resolvedPath = typeof nextPath === 'function' ? nextPath(currentPath) : nextPath;
@@ -300,7 +325,18 @@ function App() {
       }
       const { user } = await getCurrentSessionUser();
       if (cancelled) return;
-      if (user?.id) setCurrentUserId(user.id);
+      let loadedProfile = null;
+      if (user?.id) {
+        setCurrentUserId(user.id);
+        loadedProfile = await loadAuthenticatedProfile(user.id).catch(() => null);
+        if (cancelled) return;
+        const profile = loadedProfile || mapAuthUserToProfile(user);
+        setSessionProfile(profile);
+        setUsers((items) => {
+          const filtered = items.filter((item) => item.id !== profile.id);
+          return [profile, ...filtered];
+        });
+      }
       if (!user?.id) {
         setAuthReady(true);
         setIsHydrated(true);
@@ -322,6 +358,12 @@ function App() {
           departments: [],
           categories: [],
         });
+        if (loadedProfile) {
+          setUsers((items) => {
+            const filtered = items.filter((item) => item.id !== loadedProfile.id);
+            return [loadedProfile, ...filtered];
+          });
+        }
         return;
       }
       await applyLoadedData({
@@ -331,6 +373,12 @@ function App() {
         departments: Array.isArray(databaseState.departments) ? databaseState.departments : [],
         categories: Array.isArray(databaseState.categories) ? databaseState.categories : [],
       });
+      if (loadedProfile) {
+        setUsers((items) => {
+          const filtered = items.filter((item) => item.id !== loadedProfile.id);
+          return [loadedProfile, ...filtered];
+        });
+      }
     };
 
     init();
@@ -341,6 +389,14 @@ function App() {
         if (session?.user?.id) {
           manualLogoutRef.current = false;
           setCurrentUserId(session.user.id);
+          const loadedProfile = await loadAuthenticatedProfile(session.user.id).catch(() => null);
+          if (cancelled) return;
+          const profile = loadedProfile || mapAuthUserToProfile(session.user);
+          setSessionProfile(profile);
+          setUsers((items) => {
+            const filtered = items.filter((item) => item.id !== profile.id);
+            return [profile, ...filtered];
+          });
           const databaseState = await loadSupabaseAppData().catch(() => null);
           if (cancelled) return;
           if (!databaseState) {
@@ -366,6 +422,10 @@ function App() {
             departments: Array.isArray(databaseState.departments) ? databaseState.departments : [],
             categories: Array.isArray(databaseState.categories) ? databaseState.categories : [],
           });
+          setUsers((items) => {
+            const filtered = items.filter((item) => item.id !== profile.id);
+            return [profile, ...filtered];
+          });
           return;
         }
         if (!manualLogoutRef.current) {
@@ -373,6 +433,7 @@ function App() {
         }
         manualLogoutRef.current = false;
         setCurrentUserId('');
+        setSessionProfile(null);
         setUsers([]);
         setRequests([]);
         setProcessing({});
@@ -436,31 +497,13 @@ function App() {
     const entry = { id: crypto.randomUUID(), requestId, userId: currentUser.id, userName: currentUser.name, action, oldStatus, newStatus, remarks, createdAt: new Date().toLocaleString() };
     setAuditLogs((logs) => [entry, ...logs]);
     if (supabaseConfig.isConfigured && supabase) {
-      const { error } = await saveAuditLogRecord(entry);
-      if (error) console.error('Failed to save audit log:', error);
-    }
-  };
-
-  const resolveApproverForRequest = async (requestorRole, branch, confidentialityLevel) => {
-    if (supabaseConfig.isConfigured && supabase) {
-      const { data, error } = await resolveRequestApprover({
-        requestorRole,
-        branch,
-        confidentialityLevel,
-      });
-      if (!error && data?.approver_id) {
-        return {
-          approverId: data.approver_id,
-          approverName: data.approver_name || getUserNameById(users, data.approver_id),
-        };
+      try {
+        const { error } = await saveAuditLogRecord(entry);
+        if (error) console.error('Failed to save audit log:', readErrorMessage(error));
+      } catch (error) {
+        console.error('Failed to save audit log:', readErrorMessage(error));
       }
     }
-
-    const fallbackApproverId = determineApprover(currentUser, { branch, confidentialityLevel }, users);
-    return {
-      approverId: fallbackApproverId,
-      approverName: getUserNameById(users, fallbackApproverId),
-    };
   };
 
   const updateRequestStatus = async (requestId, newStatus, action, remarks = '', patch = {}) => {
@@ -482,8 +525,6 @@ function App() {
   const submitRequest = async (form, requestId = null) => {
     const validationErrors = validateRequestForm(form);
     if (validationErrors.length) return validationErrors;
-
-    const { approverId, approverName } = await resolveApproverForRequest(currentUser.role, currentUser.branch, form.confidentialityLevel);
     const target = requestId ? requests.find((item) => item.id === requestId) : null;
     if (requestId && target?.status !== 'Draft') {
       return ['Only draft requests can be edited.'];
@@ -495,20 +536,24 @@ function App() {
         ...form,
         requestorId: currentUser.id,
         requestorName: currentUser.name,
-        branch: currentUser.branch,
+        branch: resolveRequestBranch(currentUser, form.branch),
         department: form.department || currentUser.department,
         position: currentUser.position,
         status: 'Pending Approval',
-        currentApprover: approverId,
-        currentApproverName: approverName,
         assignedArchivistId: '',
         assignedArchivistName: '',
       } : null;
       if (nextItem && supabaseConfig.isConfigured && supabase) {
-        const { error } = await saveRequestRecord(nextItem);
+        const { data, error } = await saveRequestRecord(nextItem);
         if (error) {
-          console.error('Failed to save updated request:', error);
+          console.error('Failed to save updated request:', readErrorMessage(error));
           return [readErrorMessage(error, 'Save request failed.')];
+        }
+        if (data) {
+          nextItem.currentApprover = data.current_approver_id || nextItem.currentApprover || '';
+          nextItem.currentApproverName = data.current_approver_name || nextItem.currentApproverName || '';
+          nextItem.branch = data.branch || nextItem.branch;
+          nextItem.requestNo = data.request_no || nextItem.requestNo;
         }
       }
       if (nextItem) {
@@ -527,11 +572,9 @@ function App() {
       requestorId: currentUser.id,
       requestorName: currentUser.name,
       requestDate: today(),
-      branch: currentUser.branch,
+      branch: resolveRequestBranch(currentUser, form.branch),
       department: form.department || currentUser.department,
       position: currentUser.position,
-      currentApprover: approverId,
-      currentApproverName: approverName,
       assignedArchivistId: '',
       assignedArchivistName: '',
       status: 'Pending Approval',
@@ -539,10 +582,13 @@ function App() {
     if (supabaseConfig.isConfigured && supabase) {
       const { data, error } = await createRequestRecord(next);
       if (error) {
-        console.error('Failed to save request:', error);
+        console.error('Failed to save request:', readErrorMessage(error));
         return [readErrorMessage(error, 'Submit request failed.')];
       }
       next.requestNo = data?.request_no || data?.requestNo || next.requestNo;
+      next.currentApprover = data?.current_approver_id || next.currentApprover || '';
+      next.currentApproverName = data?.current_approver_name || next.currentApproverName || '';
+      next.branch = data?.branch || next.branch;
     }
     setRequests((items) => [next, ...items]);
     void addAuditLog(next.id, 'Submitted request', 'Draft', 'Pending Approval', next.purpose);
@@ -552,7 +598,6 @@ function App() {
 
   const saveDraftRequest = async (form, requestId = null) => {
     if (!currentUser) return ['No active user session.'];
-    const { approverId, approverName } = await resolveApproverForRequest(currentUser.role, currentUser.branch, form.confidentialityLevel);
     const target = requestId ? requests.find((item) => item.id === requestId) : null;
     if (requestId && target?.status !== 'Draft') {
       return ['Only draft requests can be edited.'];
@@ -561,11 +606,9 @@ function App() {
       ...form,
       requestorId: currentUser.id,
       requestorName: currentUser.name,
-      branch: currentUser.branch,
+      branch: resolveRequestBranch(currentUser, form.branch),
       department: form.department || currentUser.department,
       position: currentUser.position,
-      currentApprover: approverId,
-      currentApproverName: approverName,
       assignedArchivistId: '',
       assignedArchivistName: '',
       status: 'Draft',
@@ -574,10 +617,15 @@ function App() {
     if (requestId) {
       const nextItem = target ? { ...target, ...draftPayload } : null;
       if (nextItem && supabaseConfig.isConfigured && supabase) {
-        const { error } = await saveRequestRecord(nextItem);
+        const { data, error } = await saveRequestRecord(nextItem);
         if (error) {
-          console.error('Failed to save draft request:', error);
+          console.error('Failed to save draft request:', readErrorMessage(error));
           return [readErrorMessage(error, 'Save draft failed.')];
+        }
+        if (data) {
+          nextItem.currentApprover = data.current_approver_id || nextItem.currentApprover || '';
+          nextItem.currentApproverName = data.current_approver_name || nextItem.currentApproverName || '';
+          nextItem.branch = data.branch || nextItem.branch;
         }
       }
       if (nextItem) setRequests((items) => items.map((item) => (item.id === requestId ? nextItem : item)));
@@ -596,10 +644,12 @@ function App() {
     if (supabaseConfig.isConfigured && supabase) {
       const { data, error } = await createRequestRecord(next);
       if (error) {
-        console.error('Failed to save draft request:', error);
+        console.error('Failed to save draft request:', readErrorMessage(error));
         return [readErrorMessage(error, 'Save draft failed.')];
       }
       next.requestNo = data?.request_no || data?.requestNo || next.requestNo;
+      next.currentApprover = data?.current_approver_id || next.currentApprover || '';
+      next.currentApproverName = data?.current_approver_name || next.currentApproverName || '';
     }
     setRequests((items) => [next, ...items]);
     void addAuditLog(next.id, 'Saved draft', 'Draft', 'Draft', next.purpose || 'Draft saved');
@@ -667,6 +717,12 @@ function App() {
         avatarCustom: Boolean(patch.avatarCustom),
       };
     }));
+    setSessionProfile((profile) => profile && profile.id === currentUser.id ? {
+      ...profile,
+      name,
+      email,
+      avatar,
+    } : profile);
     return [];
   };
 
@@ -676,8 +732,49 @@ function App() {
   }), [requests, processing]);
 
   const route = path.split('/').filter(Boolean);
-  const selectedRequest = requests.find((request) => request.id === route[1] || request.id === route[0]);
+  const routeSection = route[0] || '';
+  const routeRequestId = routeSection === 'requests' || routeSection === 'archivist' ? route[1] : route[0];
+  const selectedRequest = requests.find((request) => request.id === routeRequestId) || requestDetailOverride;
   const allowedPath = currentUser ? isPathAllowed(path, currentUser.role) : false;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!allowedPath || !routeRequestId || !['requests', 'archivist'].includes(routeSection)) {
+      setRequestDetailOverride(null);
+      return undefined;
+    }
+
+    if (requests.some((request) => request.id === routeRequestId)) {
+      setRequestDetailOverride(null);
+      return undefined;
+    }
+
+    if (!supabaseConfig.isConfigured || !supabase || !currentUser) {
+      return undefined;
+    }
+
+    const loadMissingRequest = async () => {
+      const { data, error } = await loadRequestRecord(routeRequestId);
+      if (cancelled) return;
+      if (error || !data) {
+        setRequestDetailOverride(null);
+        if (error) {
+          console.error('Failed to load request detail:', readErrorMessage(error));
+        }
+        return;
+      }
+
+      setRequestDetailOverride(data);
+      setRequests((items) => (items.some((item) => item.id === data.id) ? items : [data, ...items]));
+    };
+
+    void loadMissingRequest();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [allowedPath, currentUser, requests, routeRequestId, routeSection]);
 
   if (!authReady || !currentUser || path === '/login') {
     return (
@@ -698,11 +795,14 @@ function App() {
               return ['This account is inactive. Please contact the super admin.'];
             }
             setCurrentUserId(data.user.id);
+            setSessionProfile(mapAuthUserToProfile(data.user));
             setUsers((items) => {
               const nextUser = mapAuthUserToProfile(data.user);
               return items.some((item) => item.id === nextUser.id) ? items.map((item) => (item.id === nextUser.id ? { ...item, ...nextUser } : item)) : [nextUser, ...items];
             });
           }
+          setAuthReady(true);
+          setIsHydrated(true);
           setPath('/dashboard', { replace: true });
           return [];
         }}
@@ -716,7 +816,7 @@ function App() {
     <div className={`app-shell ${theme} ${isMobileMenuOpen ? 'menu-open' : ''}`}>
       <Sidebar user={currentUser} path={path} setPath={setPath} isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
       <main className="workspace">
-        <Header user={currentUser} onLogout={async () => { manualLogoutRef.current = true; await supabaseSignOut(); setCurrentUserId(''); setPath('/login', { replace: true }); }} onUpdateProfile={updateCurrentUserProfile} theme={theme} setTheme={setTheme} isMobileMenuOpen={isMobileMenuOpen} onMenuToggle={() => setIsMobileMenuOpen((isOpen) => !isOpen)} />
+        <Header user={currentUser} onLogout={async () => { manualLogoutRef.current = true; await supabaseSignOut(); setCurrentUserId(''); setSessionProfile(null); setPath('/login', { replace: true }); }} onUpdateProfile={updateCurrentUserProfile} theme={theme} setTheme={setTheme} isMobileMenuOpen={isMobileMenuOpen} onMenuToggle={() => setIsMobileMenuOpen((isOpen) => !isOpen)} />
         {!allowedPath && <RoleDenied setPath={setPath} />}
         {allowedPath && path === '/dashboard' && <Dashboard {...pageProps} />}
         {allowedPath && path === '/requests/new' && <NewRequest {...pageProps} editingRequestId={editingRequestId} setEditingRequestId={setEditingRequestId} saveDraftRequest={saveDraftRequest} />}
@@ -1330,14 +1430,9 @@ function normalizeReleaseLink(value) {
 }
 
 function ApprovalQueue({ currentUser, requests, updateRequestStatus, users, setPath }) {
-  const isSharedPrivacyApprover = ['dpo', 'ceo'].includes(currentUser.role);
-  const queue = adminRoles.includes(currentUser.role)
+  const queue = currentUser.role === 'superadmin'
     ? requests.filter((request) => request.status === 'Pending Approval')
-    : requests.filter((request) => {
-      if (request.status !== 'Pending Approval') return false;
-      if (request.currentApprover === currentUser.id) return true;
-      return isSharedPrivacyApprover && request.confidentialityLevel === 'Confidential';
-    });
+    : requests.filter((request) => request.status === 'Pending Approval' && request.currentApprover === currentUser.id);
   const [remarks, setRemarks] = useState('');
   const [errors, setErrors] = useState([]);
   const archivist = users.find((user) => user.role === 'archivist');
@@ -1358,7 +1453,7 @@ function ApprovalQueue({ currentUser, requests, updateRequestStatus, users, setP
     updateRequestStatus(request.id, 'Rejected', 'Rejected request', remarks, { rejectedBy: currentUser.id, rejectedAt: new Date().toLocaleString(), rejectionReason: remarks });
     setRemarks('');
   };
-  return <section className="page"><PageTitle title="Approval Queue" subtitle="Requests appear here only for the assigned approver, except confidential requests also appear to Admin DPO/CEO." />{errors.length > 0 && <AlertList items={errors} />}<textarea className="remarks-box" placeholder="Remarks required for rejection; optional for approval" value={remarks} onChange={(e) => setRemarks(e.target.value)} /><div className="queue-list">{queue.map((request) => <article className="queue-card" key={request.id} onClick={() => setPath(`/requests/${request.id}`)}><div><h3>{request.documentTitle}</h3><p>{request.requestNo} by {request.requestorName}</p><p>Assigned approver: {request.currentApproverName || users.find((user) => user.id === request.currentApprover)?.name || (request.confidentialityLevel === 'Confidential' ? 'Admin DPO / CEO' : 'Not assigned')}</p><p>Reminder: bring back or revoke access by {request.borrowReturnDueDate || 'the approved due date'}.</p><span className={statusClass(request.status)}>{request.status}</span></div><div className="actions" onClick={(event) => event.stopPropagation()}><button onClick={() => approve(request)}>Approve</button><button className="danger" onClick={() => reject(request)}>Reject</button></div></article>)}{!queue.length && <Empty message="No approval items." />}</div></section>;
+  return <section className="page"><PageTitle title="Approval Queue" subtitle="Requests appear only for the assigned approver." />{errors.length > 0 && <AlertList items={errors} />}<textarea className="remarks-box" placeholder="Remarks required for rejection; optional for approval" value={remarks} onChange={(e) => setRemarks(e.target.value)} /><div className="queue-list">{queue.map((request) => <article className="queue-card" key={request.id} onClick={() => setPath(`/requests/${request.id}`)}><div><h3>{request.documentTitle}</h3><p>{request.requestNo} by {request.requestorName}</p><p>Assigned approver: {request.currentApproverName || users.find((user) => user.id === request.currentApprover)?.name || 'Not assigned'}</p><p>Reminder: bring back or revoke access by {request.borrowReturnDueDate || 'the approved due date'}.</p><span className={statusClass(request.status)}>{request.status}</span></div><div className="actions" onClick={(event) => event.stopPropagation()}><button onClick={() => approve(request)}>Approve</button><button className="danger" onClick={() => reject(request)}>Reject</button></div></article>)}{!queue.length && <Empty message="No approval items." />}</div></section>;
 }
 function ArchivistQueue({ requests, setPath }) {
   const queue = requests.filter((request) => ['Approved', 'Forwarded to Archivist', 'Processing'].includes(request.status));

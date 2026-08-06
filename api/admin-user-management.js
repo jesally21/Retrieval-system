@@ -17,11 +17,31 @@ function json(res, status, body) {
 
 function getEnv(name) {
   const fallbackNames = {
-    SUPABASE_URL: 'REACT_APP_SUPABASE_URL',
+    SUPABASE_URL: [
+      'SUPABASE_UPSTREAM_URL',
+      'REACT_APP_SUPABASE_URL',
+      'NEXT_PUBLIC_SUPABASE_URL',
+      'SUPABASE_URL',
+      'VITE_SUPABASE_URL',
+    ],
+    SUPABASE_SERVICE_ROLE_KEY: [
+      'SUPABASE_UPSTREAM_SERVICE_ROLE_KEY',
+      'REACT_APP_SUPABASE_SERVICE_ROLE_KEY',
+      'NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY',
+      'SUPABASE_SERVICE_ROLE_KEY',
+      'VITE_SUPABASE_SERVICE_ROLE_KEY',
+    ],
   };
-  const value = process.env[name] || process.env[fallbackNames[name]];
+  const fallback = fallbackNames[name] || [];
+  const value = process.env[name] || fallback.map((key) => process.env[key]).find(Boolean);
   if (!value) throw new Error(`Missing environment variable: ${name}`);
   return value;
+}
+
+function normalizeBearer(token) {
+  const value = String(token || '').trim();
+  if (!value) return '';
+  return value.toLowerCase().startsWith('bearer ') ? value : `Bearer ${value}`;
 }
 
 function normalizeRole(role) {
@@ -47,7 +67,7 @@ function getCallerClient(req) {
   return createClient(getEnv('SUPABASE_URL'), getEnv('SUPABASE_SERVICE_ROLE_KEY'), {
     global: {
       headers: {
-        Authorization: req.headers.authorization || '',
+        Authorization: normalizeBearer(req.headers.authorization || ''),
       },
     },
     auth: {
@@ -60,7 +80,7 @@ function getCallerClient(req) {
 
 async function requireSuperAdmin(req) {
   const callerClient = getCallerClient(req);
-  const { data: userData, error: userError } = await callerClient.auth.getUser();
+  const { data: userData, error: userError } = await callerClient.auth.getUser(req.headers.authorization || undefined);
   if (userError || !userData?.user) {
     throw new Error('Unauthorized.');
   }
@@ -98,7 +118,7 @@ module.exports = async function handler(req, res) {
 
     if (action === 'update-self-profile') {
       const callerClient = getCallerClient(req);
-      const { data: userData, error: userError } = await callerClient.auth.getUser();
+      const { data: userData, error: userError } = await callerClient.auth.getUser(req.headers.authorization || undefined);
       if (userError || !userData?.user) {
         return json(res, 401, { error: 'Unauthorized.' });
       }
