@@ -981,7 +981,7 @@ begin
     requested_status = 'Active'
   )
   on conflict (id) do update set
-    full_name = excluded.full_name,
+    full_name = coalesce(public.profiles.full_name, excluded.full_name),
     email = excluded.email,
     avatar_url = excluded.avatar_url,
     branch = excluded.branch,
@@ -1081,7 +1081,7 @@ begin
     coalesce(nullif(trim(u.raw_user_meta_data->>'status'), ''), 'Active') = 'Active'
   from auth.users u
   on conflict (id) do update set
-    full_name = excluded.full_name,
+    full_name = coalesce(public.profiles.full_name, excluded.full_name),
     email = excluded.email,
     avatar_url = excluded.avatar_url,
     branch = excluded.branch,
@@ -1563,7 +1563,7 @@ create policy "profiles update self basic info" on public.profiles for update us
 );
 drop policy if exists "admins manage profiles" on public.profiles;
 drop policy if exists "superadmin manage profiles" on public.profiles;
-create policy "superadmin manage profiles" on public.profiles for all using (public.is_superadmin()) with check (public.is_superadmin());
+create policy "superadmin manage non-superadmin profiles" on public.profiles for all using (public.is_superadmin() and role <> 'superadmin') with check (public.is_superadmin() and role <> 'superadmin');
 
 drop policy if exists "approval routes readable" on public.approval_routes;
 create policy "approval routes readable" on public.approval_routes for select using (auth.role() = 'authenticated');

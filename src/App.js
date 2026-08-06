@@ -38,15 +38,8 @@ const roles = {
 const adminRoles = ['superadmin', 'ceo', 'dpo'];
 const superAdminRoles = ['superadmin'];
 
-const branches = ['Barbaza', 'Culasi', 'Sibalom', 'San Jose', 'Balasan', 'Barotac Viejo', 'Caticlan', 'Molo', 'Kalibo', 'Janiuay', 'Calinog', 'Sara', 'Pres. Roxas', 'Altavas'];
-const departments = [
-  'ICT Department',
-  'Membership & Marketing Department',
-  'Savings & Credit Department',
-  'Finance & Accounting Department',
-  'Human Resources & Administration Department',
-  'Internal Audit Department',
-];
+const branches = [];
+const departments = [];
 const statuses = ['Draft', 'Pending Approval', 'Rejected', 'Approved', 'Forwarded to Archivist', 'Processing', 'Released', 'Returned', 'Access Revoked', 'Deletion Confirmed', 'For Closure', 'Closed', 'Incident Reported', 'Overdue'];
 const confidentialityLevels = ['Non Confidential', 'Confidential'];
 
@@ -635,26 +628,64 @@ function App() {
   };
 
   const updateCurrentUserProfile = async (patch) => {
-    const email = patch.email.trim().toLowerCase();
-    if (!email) return ['Email is required.'];
-    if (users.some((user) => user.id !== currentUser.id && user.email.toLowerCase() === email)) return ['Email is already used by another account.'];
+    const email = String(patch.email || '').trim().toLowerCase();
+    const name = String(patch.name || '').trim();
+    const avatar = patch.avatarCustom ? String(patch.avatar || '').trim() : getAvatarUrl(name);
+    const currentPassword = String(patch.currentPassword || '').trim();
+    const newPassword = String(patch.newPassword || '').trim();
 
-    const name = patch.name?.trim();
-    if (!name) return ['Full name is required.'];
+    const errors = [];
+    if (!name) errors.push('Full name is required.');
+    if (!email) errors.push('Email is required.');
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push('Please enter a valid email address.');
+    if (newPassword && newPassword.length < 6) errors.push('New password must be at least 6 characters long.');
+    if (patch.confirmPassword !== undefined && newPassword !== String(patch.confirmPassword || '').trim()) errors.push('New password and confirmation do not match.');
 
-    const avatar = patch.avatarCustom ? patch.avatar : getAvatarUrl(name);
+    const nextEmail = email || currentUser.email;
+    const emailChanged = nextEmail.toLowerCase() !== String(currentUser.email || '').trim().toLowerCase();
+    const passwordChanged = Boolean(newPassword);
+    if ((emailChanged || passwordChanged) && !currentPassword) {
+      errors.push('Current password is required to change your email or password.');
+    }
+    if (errors.length > 0) {
+      return { errors };
+    }
+
     const nextProfile = {
       full_name: name,
       email,
-      avatar_url: avatar,
+      avatar_url: patch.avatarCustom ? avatar : null,
+      current_password: currentPassword,
+      new_password: newPassword,
     };
 
     if (supabaseConfig.isConfigured && supabase) {
-      const { error } = await updateOwnProfile({
+      const { data, error } = await updateOwnProfile({
         userId: currentUser.id,
         profile: nextProfile,
       });
-      if (error) return [readErrorMessage(error, 'Update profile failed.')];
+      if (error) return { errors: [readErrorMessage(error, 'Update profile failed.')] };
+
+      const updatedProfile = data?.profile;
+      const refreshedAvatar = updatedProfile?.avatar_url || (updatedProfile?.full_name ? getAvatarUrl(updatedProfile.full_name) : avatar);
+      setUsers((items) => items.map((user) => {
+        if (user.id !== currentUser.id) return user;
+        return {
+          ...user,
+          name: updatedProfile?.full_name || name,
+          email: updatedProfile?.email || email,
+          avatar: refreshedAvatar,
+          avatarCustom: Boolean(updatedProfile?.avatar_url),
+        };
+      }));
+
+      return {
+        errors: [],
+        successMessage: data?.passwordChanged
+          ? 'Profile updated. Please sign in again with your new password.'
+          : 'Profile updated successfully.',
+        requiresRelogin: Boolean(data?.passwordChanged),
+      };
     }
 
     setUsers((items) => items.map((user) => {
@@ -667,7 +698,11 @@ function App() {
         avatarCustom: Boolean(patch.avatarCustom),
       };
     }));
-    return [];
+    return {
+      errors: [],
+      successMessage: 'Profile updated successfully.',
+      requiresRelogin: false,
+    };
   };
 
   const visibleRequests = useMemo(() => requests.map((request) => {
@@ -802,25 +837,63 @@ function Sidebar({ user, path, setPath, isOpen, onClose }) {
 
 function Header({ user, onLogout, onUpdateProfile, theme, setTheme, isMobileMenuOpen, onMenuToggle }) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [profileDraft, setProfileDraft] = useState({ name: user.name, email: user.email, avatar: user.avatarCustom ? user.avatar : '', avatarCustom: Boolean(user.avatarCustom) });
+  const [profileNotice, setProfileNotice] = useState('');
+  const [profileDraft, setProfileDraft] = useState({
+    name: user.name,
+    email: user.email,
+    avatar: user.avatarCustom ? user.avatar : '',
+    avatarCustom: Boolean(user.avatarCustom),
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
   const [profileErrors, setProfileErrors] = useState([]);
+  const isSuperAdmin = user.role === 'superadmin';
 
   useEffect(() => {
-    setProfileDraft({ name: user.name, email: user.email, avatar: user.avatarCustom ? user.avatar : '', avatarCustom: Boolean(user.avatarCustom) });
+    setProfileDraft({
+      name: user.name,
+      email: user.email,
+      avatar: user.avatarCustom ? user.avatar : '',
+      avatarCustom: Boolean(user.avatarCustom),
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: '',
+    });
     setProfileErrors([]);
+    setIsEditingProfile(false);
   }, [user]);
 
   const currentAvatar = profileDraft.avatar || getAvatarUrl(profileDraft.name);
-  const notifications = [
-    {
-      id: 'n1',
-      title: 'Document retrieval update',
-      message: `${roles[user.role]} dashboard has request activity ready to review.`,
-    },
-  ];
+  const notifications = [];
+  const hasNameChange = profileDraft.name.trim() !== user.name.trim();
+  const hasEmailChange = profileDraft.email.trim().toLowerCase() !== user.email.trim().toLowerCase();
+  const hasAvatarChange = Boolean(profileDraft.avatarCustom) !== Boolean(user.avatarCustom)
+    || (profileDraft.avatarCustom && profileDraft.avatar !== user.avatar)
+    || (!profileDraft.avatarCustom && Boolean(user.avatarCustom));
+  const hasPasswordChange = isSuperAdmin && Boolean(profileDraft.newPassword.trim());
+  const hasProfileChanges = hasNameChange || hasEmailChange || hasAvatarChange || hasPasswordChange;
+  const saveDisabled = !isEditingProfile || isSavingProfile || !hasProfileChanges;
+
+  const resetProfileDraft = () => {
+    setProfileDraft({
+      name: user.name,
+      email: user.email,
+      avatar: user.avatarCustom ? user.avatar : '',
+      avatarCustom: Boolean(user.avatarCustom),
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: '',
+    });
+    setProfileErrors([]);
+    setProfileNotice('');
+  };
 
   const uploadProfileImage = (event) => {
+    if (!isEditingProfile) return;
     const file = event.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) {
@@ -831,14 +904,92 @@ function Header({ user, onLogout, onUpdateProfile, theme, setTheme, isMobileMenu
     reader.onload = () => {
       setProfileDraft((draft) => ({ ...draft, avatar: reader.result, avatarCustom: true }));
       setProfileErrors([]);
+      setProfileNotice('');
     };
     reader.readAsDataURL(file);
   };
 
+  const openEditMode = () => {
+    setProfileErrors([]);
+    setProfileNotice('');
+    setIsEditingProfile(true);
+  };
+
+  const closeProfileEditor = () => {
+    setIsProfileOpen(false);
+    setIsEditingProfile(false);
+    setIsSavingProfile(false);
+    setProfileErrors([]);
+    setProfileNotice('');
+  };
+
+  const cancelEditMode = () => {
+    resetProfileDraft();
+    setIsEditingProfile(false);
+  };
+
   const saveProfile = async () => {
-    const errors = await onUpdateProfile(profileDraft);
-    setProfileErrors(errors);
-    if (!errors.length) setIsProfileOpen(false);
+    if (!isEditingProfile) return;
+    const nextErrors = [];
+    const name = profileDraft.name.trim();
+    const email = profileDraft.email.trim().toLowerCase();
+    const currentPassword = profileDraft.currentPassword.trim();
+    const newPassword = profileDraft.newPassword.trim();
+    const confirmPassword = profileDraft.confirmPassword.trim();
+
+    if (!name) nextErrors.push('Full name is required.');
+    if (!email) nextErrors.push('Email is required.');
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) nextErrors.push('Please enter a valid email address.');
+    if (isSuperAdmin && newPassword && newPassword.length < 6) nextErrors.push('New password must be at least 6 characters long.');
+    if (isSuperAdmin && newPassword !== confirmPassword) nextErrors.push('New password and confirmation do not match.');
+    if ((hasEmailChange || hasPasswordChange) && !currentPassword) nextErrors.push('Current password is required to change your email or password.');
+    if (nextErrors.length > 0) {
+      setProfileErrors(nextErrors);
+      return;
+    }
+
+    if (!window.confirm('Save these profile changes?')) {
+      return;
+    }
+
+    setIsSavingProfile(true);
+    setProfileErrors([]);
+    setProfileNotice('');
+
+    const result = await onUpdateProfile({
+      name,
+      email,
+      avatar: profileDraft.avatar,
+      avatarCustom: profileDraft.avatarCustom,
+      currentPassword,
+      newPassword,
+      confirmPassword,
+    });
+
+    setIsSavingProfile(false);
+
+    if (result?.errors?.length) {
+      setProfileErrors(result.errors);
+      return;
+    }
+
+    if (result?.successMessage) {
+      setProfileNotice(result.successMessage);
+    }
+
+    setProfileDraft((draft) => ({
+      ...draft,
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: '',
+    }));
+    setIsEditingProfile(false);
+
+    if (result?.requiresRelogin) {
+      window.setTimeout(() => {
+        void onLogout();
+      }, 1200);
+    }
   };
 
   return (
@@ -859,23 +1010,25 @@ function Header({ user, onLogout, onUpdateProfile, theme, setTheme, isMobileMenu
             <span>{roles[user.role]} / {user.department}</span>
           </div>
         </button>
-        <div className="notification-wrap">
-          <button type="button" className="topbar-icon-button" aria-label="Notifications" aria-expanded={isNotificationsOpen} onClick={() => setIsNotificationsOpen((isOpen) => !isOpen)}>
-            <span className="notification-dot">{notifications.length}</span>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 21h4" /></svg>
-          </button>
-          {isNotificationsOpen && (
-            <div className="notification-panel" role="status">
-              <h3>Notifications</h3>
-              {notifications.map((notification) => (
-                <div className="notification-item" key={notification.id}>
-                  <strong>{notification.title}</strong>
-                  <span>{notification.message}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {notifications.length > 0 && (
+          <div className="notification-wrap">
+            <button type="button" className="topbar-icon-button" aria-label="Notifications" aria-expanded={isNotificationsOpen} onClick={() => setIsNotificationsOpen((isOpen) => !isOpen)}>
+              <span className="notification-dot">{notifications.length}</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 21h4" /></svg>
+            </button>
+            {isNotificationsOpen && (
+              <div className="notification-panel" role="status">
+                <h3>Notifications</h3>
+                {notifications.map((notification) => (
+                  <div className="notification-item" key={notification.id}>
+                    <strong>{notification.title}</strong>
+                    <span>{notification.message}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <button type="button" className="topbar-icon-button" aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
           <span className="theme-toggle-dot"><ThemeIcon theme={theme} /></span>
         </button>
@@ -884,22 +1037,45 @@ function Header({ user, onLogout, onUpdateProfile, theme, setTheme, isMobileMenu
       {isProfileOpen && (
         <div className="profile-editor" role="dialog" aria-modal="true" aria-label="Edit profile">
           <div className="profile-editor-panel">
-            <h2>Edit Profile</h2>
+            <div className="modal-header">
+              <h2>Profile</h2>
+              <button className="ghost modal-close-button" type="button" onClick={closeProfileEditor} aria-label="Close">x</button>
+            </div>
+            {profileNotice && <div className="success-banner" role="status">{profileNotice}</div>}
             {profileErrors.length > 0 && <AlertList items={profileErrors} />}
             <div className="profile-avatar-preview">
               <img className="avatar-image" src={currentAvatar} alt={profileDraft.name || user.name} />
               <div>
                 <span>Profile picture</span>
-                <label className="upload-avatar-button">
+                <label className={`upload-avatar-button ${!isEditingProfile ? 'disabled' : ''}`}>
                   Choose Image
-                  <input type="file" accept="image/*" onChange={uploadProfileImage} />
+                  <input type="file" accept="image/*" disabled={!isEditingProfile} onChange={uploadProfileImage} />
                 </label>
               </div>
             </div>
-            <Field label="Name" value={profileDraft.name} onChange={(value) => setProfileDraft((draft) => ({ ...draft, name: value }))} />
+            <Field label="Full Name" value={profileDraft.name} readOnly={!isEditingProfile} onChange={(value) => setProfileDraft((draft) => ({ ...draft, name: value }))} />
+            <Field label="Email Address" type="email" value={profileDraft.email} readOnly={!isEditingProfile} onChange={(value) => setProfileDraft((draft) => ({ ...draft, email: value }))} />
+            {isSuperAdmin && isEditingProfile && (
+              <div className="profile-security-section">
+                <h3>Security</h3>
+                <Field label="Current Password" type="password" value={profileDraft.currentPassword} readOnly={!isEditingProfile} onChange={(value) => setProfileDraft((draft) => ({ ...draft, currentPassword: value }))} />
+                <Field label="New Password" type="password" value={profileDraft.newPassword} readOnly={!isEditingProfile} onChange={(value) => setProfileDraft((draft) => ({ ...draft, newPassword: value }))} />
+                <Field label="Confirm New Password" type="password" value={profileDraft.confirmPassword} readOnly={!isEditingProfile} onChange={(value) => setProfileDraft((draft) => ({ ...draft, confirmPassword: value }))} />
+                <p className="helper-text">Current password is required before changing your email or password.</p>
+              </div>
+            )}
             <div className="actions">
-              <button type="button" onClick={saveProfile}>Save Profile</button>
-              <button className="ghost" type="button" onClick={() => setIsProfileOpen(false)}>Cancel</button>
+              {!isEditingProfile ? (
+                <>
+                  <button type="button" onClick={openEditMode}>Edit Profile</button>
+                  <button className="ghost" type="button" onClick={closeProfileEditor}>Close</button>
+                </>
+              ) : (
+                <>
+                  <button type="button" onClick={saveProfile} disabled={saveDisabled}>{isSavingProfile ? 'Saving...' : 'Save Changes'}</button>
+                  <button className="ghost" type="button" onClick={cancelEditMode} disabled={isSavingProfile}>Cancel Edit</button>
+                </>
+              )}
             </div>
           </div>
         </div>

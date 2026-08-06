@@ -38,7 +38,7 @@ const server = http.createServer((req, res) => {
     return sendJson(res, 200, { ok: true });
   }
 
-  if (requestUrl.pathname === '/api/runtime-env.js') {
+  if (requestUrl.pathname === '/api/runtime-env' || requestUrl.pathname === '/api/runtime-env.js') {
     return runtimeEnvHandler(req, res);
   }
 

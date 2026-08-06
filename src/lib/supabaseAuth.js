@@ -209,48 +209,6 @@ async function updateProfileDirectly(userId, profile) {
   return { data, error: null };
 }
 
-async function updateOwnProfileDirectly(userId, profile) {
-  const sessionResult = await supabase.auth.getSession();
-  const currentUserId = sessionResult?.data?.session?.user?.id || '';
-  if (currentUserId !== userId) {
-    return { data: null, error: new Error('Current session does not match the requested profile.') };
-  }
-
-  const authPayload = {};
-  if (profile.email !== undefined) authPayload.email = String(profile.email || '').trim().toLowerCase();
-
-  const metadata = {};
-  if (profile.full_name !== undefined) metadata.full_name = String(profile.full_name || '').trim();
-  if (profile.avatar_url !== undefined) metadata.avatar_url = profile.avatar_url || null;
-
-  if (Object.keys(authPayload).length || Object.keys(metadata).length) {
-    const { error: authError } = await supabase.auth.updateUser({
-      ...(Object.keys(authPayload).length ? authPayload : {}),
-      ...(Object.keys(metadata).length ? { data: metadata } : {}),
-    });
-    if (authError) {
-      return { data: null, error: formatSupabaseError(authError, 'Failed to update profile.') };
-    }
-  }
-
-  const { data, error } = await supabase
-    .from('profiles')
-    .update({
-      ...(profile.full_name !== undefined ? { full_name: String(profile.full_name || '').trim() } : {}),
-      ...(profile.email !== undefined ? { email: String(profile.email || '').trim().toLowerCase() } : {}),
-      ...(profile.avatar_url !== undefined ? { avatar_url: profile.avatar_url || null } : {}),
-    })
-    .eq('id', userId)
-    .select()
-    .single();
-
-  if (error) {
-    return { data: null, error: formatSupabaseError(error, 'Failed to update profile.') };
-  }
-
-  return { data, error: null };
-}
-
 export async function getCurrentSessionUser() {
   if (!supabase) return { user: null, session: null, error: new Error('Supabase is not configured.') };
 
@@ -338,26 +296,89 @@ export async function updateUserAccount({ userId, profile }) {
 export async function updateOwnProfile({ userId, profile }) {
   if (!supabase) return { data: null, error: new Error('Supabase is not configured.') };
   try {
-    const data = await invokeAdminApi({
-      action: 'update-self-profile',
-      userId,
-      profile,
-    });
-    return { data, error: null };
-  } catch (error) {
-    const message = String(error?.message || '');
-    if (/404|failed to fetch|NetworkError|Missing environment variable/i.test(message)) {
-      const fallback = await updateOwnProfileDirectly(userId, profile);
-      if (!fallback.error) {
-        return {
-          data: {
-            profile: fallback.data,
-            fallbackUsed: true,
-          },
-          error: null,
-        };
+    const sessionResult = await supabase.auth.getSession();
+    const currentSession = sessionResult?.data?.session || null;
+    const currentUser = currentSession?.user || null;
+    if (!currentUser?.id || currentUser.id !== userId) {
+      return { data: null, error: new Error('Current session does not match the requested profile.') };
+    }
+
+    const currentPassword = String(profile?.current_password || profile?.currentPassword || '').trim();
+    const nextPassword = String(profile?.new_password || profile?.newPassword || '').trim();
+    const nextEmail = profile.email !== undefined ? String(profile.email || '').trim().toLowerCase() : String(currentUser.email || '').trim().toLowerCase();
+    const nextFullName = profile.full_name !== undefined ? String(profile.full_name || '').trim() : String(currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || currentUser.email || 'User').trim();
+    const nextAvatar = profile.avatar_url !== undefined ? profile.avatar_url || null : currentUser.user_metadata?.avatar_url || null;
+    const emailChanged = profile.email !== undefined && nextEmail !== String(currentUser.email || '').trim().toLowerCase();
+    const passwordChanged = Boolean(nextPassword);
+    const metadataChanged = profile.full_name !== undefined || profile.avatar_url !== undefined;
+
+    if ((emailChanged || passwordChanged) && !currentPassword) {
+      return { data: null, error: new Error('Current password is required to change your email or password.') };
+    }
+
+    if (emailChanged || passwordChanged) {
+      const { error: reauthError } = await supabase.auth.signInWithPassword({
+        email: String(currentUser.email || '').trim().toLowerCase(),
+        password: currentPassword,
+      });
+      if (reauthError) {
+        return { data: null, error: normalizeAuthFailure(reauthError, 'Current password verification failed.') };
       }
     }
+
+    const authUpdate = {};
+    if (emailChanged) authUpdate.email = nextEmail;
+    if (passwordChanged) authUpdate.password = nextPassword;
+    if (metadataChanged) {
+      authUpdate.data = {
+        ...(profile.full_name !== undefined ? { full_name: nextFullName } : {}),
+        ...(profile.avatar_url !== undefined ? { avatar_url: nextAvatar } : {}),
+      };
+    }
+    if (emailChanged || passwordChanged) {
+      authUpdate.current_password = currentPassword;
+    }
+
+    let updatedUser = currentUser;
+    let updatedSession = currentSession;
+    if (Object.keys(authUpdate).length > 0) {
+      const { data: authData, error: authError } = await supabase.auth.updateUser(authUpdate);
+      if (authError) {
+        return { data: null, error: normalizeAuthFailure(authError, 'Failed to update profile.') };
+      }
+      updatedUser = authData?.user || updatedUser;
+      updatedSession = authData?.session || updatedSession;
+    }
+
+    const profileUpdate = {
+      updated_at: new Date().toISOString(),
+    };
+    if (profile.full_name !== undefined) profileUpdate.full_name = nextFullName;
+    if (profile.email !== undefined) profileUpdate.email = nextEmail;
+    if (profile.avatar_url !== undefined) profileUpdate.avatar_url = nextAvatar;
+
+    const { data: updatedProfile, error } = await supabase
+      .from('profiles')
+      .update(profileUpdate)
+      .eq('id', userId)
+      .select()
+      .single();
+
+    if (error) {
+      return { data: null, error: formatSupabaseError(error, 'Failed to update profile.') };
+    }
+
+    return {
+      data: {
+        user: updatedUser,
+        session: updatedSession,
+        profile: updatedProfile,
+        emailChanged,
+        passwordChanged,
+      },
+      error: null,
+    };
+  } catch (error) {
     return { data: null, error: normalizeAuthFailure(error, 'Update profile failed.') };
   }
 }

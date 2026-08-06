@@ -1870,6 +1870,13 @@ body.dark .queue-card p {
   padding: 14px;
 }
 
+.success-banner {
+  border-radius: 8px;
+  background: #e7f7ec;
+  color: #1f6d35;
+  padding: 14px;
+}
+
 .error-list {
   display: grid;
   gap: 4px;
@@ -2116,6 +2123,22 @@ body.dark .login-panel {
 
 .edit-user-panel .modal-header {
   padding-top: 20px;
+}
+
+.profile-security-section {
+  display: grid;
+  gap: 10px;
+  padding: 16px 0;
+}
+
+.profile-security-section h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.upload-avatar-button.disabled {
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 .modal-header {
