@@ -5,9 +5,16 @@ function normalizeName(value, fallback = '') {
 }
 
 export function normalizeRole(role) {
-  const value = String(role || '').trim();
+  const value = String(role || '').trim().toLowerCase();
   if (value === 'sacd_head') return 'department_head';
   if (value === 'admin') return 'superadmin';
+  if (['staff/requestor', 'staff-requestor', 'staff requestor', 'requestor', 'staff', 'staff / requestor'].includes(value)) return 'requestor';
+  if (['branch head', 'branch-head', 'branch/head', 'branch head approver', 'manager - approver of requestor', 'manager / approver of requestor'].includes(value)) return 'branch_head';
+  if (['department head', 'department-head', 'department/head', 'head - approver of requestors and managers', 'head / approver of requestors and managers'].includes(value)) return 'department_head';
+  if (['admin/dpo', 'admin - dpo', 'data privacy officer', 'dpo'].includes(value)) return 'dpo';
+  if (['admin/ceo', 'admin - ceo', 'ceo'].includes(value)) return 'ceo';
+  if (['archivist', 'archivist - process approved docs'].includes(value)) return 'archivist';
+  if (['superadmin', 'super admin', 'superadmin / ict', 'super admin / ict', 'super admin - ict', 'ict'].includes(value)) return 'superadmin';
   if (['requestor', 'branch_head', 'department_head', 'dpo', 'ceo', 'archivist', 'superadmin'].includes(value)) return value;
   return 'requestor';
 }
@@ -29,6 +36,23 @@ function formatSupabaseError(error, fallbackMessage = 'Supabase request failed.'
     return new Error(fallbackMessage);
   }
   return new Error(message);
+}
+
+async function invokeDocumentRequestRpc(action, row) {
+  if (!supabase) return { data: null, error: new Error('Supabase is not configured.') };
+
+  await supabase.auth.getSession().catch(() => null);
+
+  const rpcName = action === 'create-request' ? 'create_document_request' : 'save_document_request';
+  const { data, error } = await supabase.rpc(rpcName, {
+    p_request: row,
+  });
+
+  if (error) {
+    return { data: null, error: formatSupabaseError(error, action === 'create-request' ? 'Failed to create request.' : 'Failed to save request.') };
+  }
+
+  return { data, error: null };
 }
 
 function mapProfileRow(row) {
@@ -238,6 +262,19 @@ async function replaceReferenceRows(table, rows) {
   }
 }
 
+export async function saveReferenceData({ branches = [], departments = [], categories = [] }) {
+  if (!supabase) return { error: new Error('Supabase is not configured.') };
+
+  try {
+    await replaceReferenceRows('branches', branches.map((name) => ({ name: normalizeName(name), is_active: true })).filter((row) => row.name));
+    await replaceReferenceRows('departments', departments.map((name) => ({ name: normalizeName(name), is_active: true })).filter((row) => row.name));
+    await replaceReferenceRows('document_categories', categories.map((name) => ({ name: normalizeName(name), description: null, is_active: true })).filter((row) => row.name));
+    return { error: null };
+  } catch (error) {
+    return { error: formatSupabaseError(error, 'Failed to save settings.') };
+  }
+}
+
 export async function loadSupabaseAppData() {
   if (!supabase) {
     return {
@@ -413,15 +450,7 @@ function buildRequestRow(request) {
 export async function createRequestRecord(request) {
   if (!supabase) return { data: null, error: new Error('Supabase is not configured.') };
   const row = buildRequestRow(request);
-  delete row.id;
-  const { data, error } = await supabase
-    .from('document_requests')
-    .insert(row)
-    .select()
-    .single();
-
-  if (error) return { data: null, error: formatSupabaseError(error, 'Failed to create request.') };
-  return { data, error: null };
+  return invokeDocumentRequestRpc('create-request', row);
 }
 
 export async function saveProcessingRecord(requestId, record) {
@@ -516,14 +545,7 @@ export async function saveIncidentRecord(record) {
 export async function saveRequestRecord(request) {
   if (!supabase) return { data: null, error: new Error('Supabase is not configured.') };
   const row = buildRequestRow(request);
-  const { data, error } = await supabase
-    .from('document_requests')
-    .upsert(row, { onConflict: 'id' })
-    .select()
-    .single();
-
-  if (error) return { data: null, error: formatSupabaseError(error, 'Failed to save request.') };
-  return { data, error: null };
+  return invokeDocumentRequestRpc('save-request', row);
 }
 
 export async function deleteRequestRecord(requestId) {

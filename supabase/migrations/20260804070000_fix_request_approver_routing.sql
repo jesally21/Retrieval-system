@@ -63,14 +63,6 @@ begin
       where role = 'branch_head' and is_active = true and branch = p_branch
       order by created_at asc
       limit 1;
-    if approver_profile.id is null then
-      select *
-        into approver_profile
-        from public.profiles
-        where role = 'branch_head' and is_active = true
-        order by created_at asc
-        limit 1;
-    end if;
   elsif resolved_approver_role = 'department_head' then
     select *
       into approver_profile

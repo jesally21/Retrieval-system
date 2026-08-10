@@ -32,29 +32,40 @@ function isLocalhostUrl(value) {
 function shouldKeepCandidate(value) {
   const text = String(value || '').trim();
   if (!text) return false;
+  try {
+    const parsed = new URL(text);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+  } catch {
+    return false;
+  }
   if (process.env.NODE_ENV !== 'production') return true;
   return !isLocalhostUrl(text);
 }
 
+function normalizeSupabaseUrl(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+
+  try {
+    const parsed = new URL(text);
+    return `${parsed.origin}/`;
+  } catch {
+    return '';
+  }
+}
+
 function collectSupabaseUrls() {
   return [
-    readRuntimeEnv('REACT_APP_SUPABASE_PROXY_URL'),
     readRuntimeEnv('REACT_APP_SUPABASE_URL'),
-    readRuntimeEnv('NEXT_PUBLIC_SUPABASE_PROXY_URL'),
-    readRuntimeEnv('NEXT_PUBLIC_SUPABASE_URL'),
-    readRuntimeEnv('SUPABASE_PROXY_URL'),
     readRuntimeEnv('SUPABASE_URL'),
-    readRuntimeEnv('VITE_SUPABASE_PROXY_URL'),
+    readRuntimeEnv('NEXT_PUBLIC_SUPABASE_URL'),
     readRuntimeEnv('VITE_SUPABASE_URL'),
-    readBuildEnv('REACT_APP_SUPABASE_PROXY_URL'),
     readBuildEnv('REACT_APP_SUPABASE_URL'),
-    readBuildEnv('NEXT_PUBLIC_SUPABASE_PROXY_URL'),
-    readBuildEnv('NEXT_PUBLIC_SUPABASE_URL'),
-    readBuildEnv('SUPABASE_PROXY_URL'),
     readBuildEnv('SUPABASE_URL'),
-    readBuildEnv('VITE_SUPABASE_PROXY_URL'),
+    readBuildEnv('NEXT_PUBLIC_SUPABASE_URL'),
     readBuildEnv('VITE_SUPABASE_URL'),
   ]
+    .map(normalizeSupabaseUrl)
     .filter(shouldKeepCandidate)
     .filter((value, index, array) => array.indexOf(value) === index);
 }
@@ -79,6 +90,9 @@ export const supabaseClients = supabaseConfig.isConfigured
   ? supabaseUrlCandidates.map((url) => createClient(url, supabaseAnonKey, {
     auth: {
       storageKey: 'bmpc-document-retrieval-auth',
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true,
     },
   }))
   : [];

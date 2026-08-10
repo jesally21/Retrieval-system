@@ -115,7 +115,7 @@ begin
     requested_status = 'Active'
   )
   on conflict (id) do update set
-    full_name = excluded.full_name,
+    full_name = coalesce(public.profiles.full_name, excluded.full_name),
     email = excluded.email,
     avatar_url = excluded.avatar_url,
     branch = excluded.branch,
@@ -199,7 +199,7 @@ begin
     coalesce(nullif(trim(u.raw_user_meta_data->>'status'), ''), 'Active') = 'Active'
   from auth.users u
   on conflict (id) do update set
-    full_name = excluded.full_name,
+    full_name = coalesce(public.profiles.full_name, excluded.full_name),
     email = excluded.email,
     avatar_url = excluded.avatar_url,
     branch = excluded.branch,

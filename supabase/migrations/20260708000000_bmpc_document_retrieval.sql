@@ -4,7 +4,6 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   full_name text not null,
   email text not null unique,
-  gender text not null default 'male' check (gender in ('male', 'female')),
   branch text,
   department text,
   position text,

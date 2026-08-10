@@ -12,7 +12,7 @@ Working React MVP for Barbaza Multi-Purpose Cooperative document retrieval reque
 - Request details with processing, closure, incident, and audit trail sections.
 - Reports with export-ready filtered tables.
 - Admin user and settings views.
-- Supabase SQL schema with tables, seed reference data, helper functions, triggers, indexes, and RLS policies.
+- Supabase SQL schema with tables, reference data, helper functions, triggers, indexes, and RLS policies.
 
 ## Run Locally
 
@@ -64,4 +64,4 @@ supabase/schema.sql
 
 The schema creates the document retrieval tables, reference data, request routing tables, processing/closure/incident/audit tables, helper functions, triggers, indexes, and RLS policies.
 
-The current UI uses in-memory demo data so the full workflow can be reviewed immediately. The Supabase schema and client config are ready for wiring persistent CRUD/auth calls into the existing screens.
+The current UI expects live Supabase data and shows empty states when no records are available. The Supabase schema and client config are ready for persistent CRUD/auth flows in the existing screens.

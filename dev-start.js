@@ -61,6 +61,33 @@ function launch(command, args, label, extraEnv = {}) {
   return child;
 }
 
+function withDefinedEnv(baseEnv, extraEnv) {
+  const nextEnv = { ...baseEnv };
+  for (const [key, value] of Object.entries(extraEnv)) {
+    if (value === undefined || value === null) continue;
+    const text = String(value).trim();
+    if (!text) continue;
+    nextEnv[key] = text;
+  }
+  return nextEnv;
+}
+
+function killProcessTree(proc) {
+  if (!proc || proc.killed) return;
+  if (isWin) {
+    spawnSync('taskkill', ['/PID', String(proc.pid), '/T', '/F'], {
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    return;
+  }
+  try {
+    proc.kill('SIGTERM');
+  } catch {
+    // ignore cleanup failures
+  }
+}
+
 let shuttingDown = false;
 let api = null;
 let client = null;
@@ -70,9 +97,7 @@ function shutdown(code = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
   for (const proc of [client, apiOwned ? api : null]) {
-    if (proc && !proc.killed) {
-      proc.kill();
-    }
+    killProcessTree(proc);
   }
   process.exit(code);
 }
@@ -85,20 +110,21 @@ process.on('SIGTERM', () => shutdown(0));
   const clientPort = Number(process.env.PORT || (await findFreePort(3000)));
   const upstreamSupabaseUrl = String(process.env.REACT_APP_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
   const upstreamSupabaseAnonKey = String(process.env.REACT_APP_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
-  const proxySupabaseUrl = `http://127.0.0.1:${apiPort}/supabase`;
+  const sharedSupabaseEnv = withDefinedEnv(process.env, {
+    REACT_APP_SUPABASE_URL: upstreamSupabaseUrl,
+    REACT_APP_SUPABASE_ANON_KEY: upstreamSupabaseAnonKey,
+    SUPABASE_URL: upstreamSupabaseUrl,
+    SUPABASE_UPSTREAM_URL: upstreamSupabaseUrl,
+    SUPABASE_UPSTREAM_ANON_KEY: upstreamSupabaseAnonKey,
+  });
 
   if (!(await isApiHealthy(apiPort))) {
     stopStaleApiProcesses();
     await new Promise((resolve) => setTimeout(resolve, 500));
     apiOwned = true;
-    api = launch(process.execPath, [path.join(__dirname, 'dev-api-server.js')], 'API', {
+    api = launch(process.execPath, [path.join(__dirname, 'dev-api-server.js')], 'API', withDefinedEnv(sharedSupabaseEnv, {
       API_PORT: String(apiPort),
-      SUPABASE_UPSTREAM_URL: upstreamSupabaseUrl,
-      SUPABASE_UPSTREAM_ANON_KEY: upstreamSupabaseAnonKey,
-      REACT_APP_SUPABASE_PROXY_URL: proxySupabaseUrl,
-      REACT_APP_SUPABASE_URL: proxySupabaseUrl,
-      REACT_APP_SUPABASE_ANON_KEY: upstreamSupabaseAnonKey,
-    });
+    }));
   } else {
     console.log(`Using existing API server on http://127.0.0.1:${apiPort}`);
   }
@@ -106,17 +132,17 @@ process.on('SIGTERM', () => shutdown(0));
   // Windows needs a shell to run npm's .cmd shim directly.
   client = isWin
     ? launch(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 'npm run start:client'], 'Client', {
-      PORT: String(clientPort),
-      BROWSER: 'none',
-      REACT_APP_SUPABASE_PROXY_URL: proxySupabaseUrl,
-      REACT_APP_SUPABASE_URL: proxySupabaseUrl,
-      REACT_APP_SUPABASE_ANON_KEY: upstreamSupabaseAnonKey,
+      ...withDefinedEnv(process.env, {
+        PORT: String(clientPort),
+        BROWSER: 'none',
+        REACT_APP_SUPABASE_URL: upstreamSupabaseUrl,
+        REACT_APP_SUPABASE_ANON_KEY: upstreamSupabaseAnonKey,
+      }),
     })
-    : launch('npm', ['run', 'start:client'], 'Client', {
+    : launch('npm', ['run', 'start:client'], 'Client', withDefinedEnv(process.env, {
       PORT: String(clientPort),
       BROWSER: 'none',
-      REACT_APP_SUPABASE_PROXY_URL: proxySupabaseUrl,
-      REACT_APP_SUPABASE_URL: proxySupabaseUrl,
+      REACT_APP_SUPABASE_URL: upstreamSupabaseUrl,
       REACT_APP_SUPABASE_ANON_KEY: upstreamSupabaseAnonKey,
-    });
+    }));
 })();

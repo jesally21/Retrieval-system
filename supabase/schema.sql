@@ -1005,7 +1005,7 @@ begin
     requested_status = 'Active'
   )
   on conflict (id) do update set
-    full_name = excluded.full_name,
+    full_name = coalesce(public.profiles.full_name, excluded.full_name),
     email = excluded.email,
     avatar_url = excluded.avatar_url,
     branch = excluded.branch,
@@ -1105,7 +1105,7 @@ begin
     coalesce(nullif(trim(u.raw_user_meta_data->>'status'), ''), 'Active') = 'Active'
   from auth.users u
   on conflict (id) do update set
-    full_name = excluded.full_name,
+    full_name = coalesce(public.profiles.full_name, excluded.full_name),
     email = excluded.email,
     avatar_url = excluded.avatar_url,
     branch = excluded.branch,
@@ -1306,14 +1306,6 @@ begin
       where role = 'branch_head' and is_active = true and branch = p_branch
       order by created_at asc
       limit 1;
-    if approver_profile.id is null then
-      select *
-        into approver_profile
-        from public.profiles
-        where role = 'branch_head' and is_active = true
-        order by created_at asc
-        limit 1;
-    end if;
   elsif resolved_approver_role = 'department_head' then
     select *
       into approver_profile
@@ -1587,7 +1579,7 @@ create policy "profiles update self basic info" on public.profiles for update us
 );
 drop policy if exists "admins manage profiles" on public.profiles;
 drop policy if exists "superadmin manage profiles" on public.profiles;
-create policy "superadmin manage profiles" on public.profiles for all using (public.is_superadmin()) with check (public.is_superadmin());
+create policy "superadmin manage non-superadmin profiles" on public.profiles for all using (public.is_superadmin() and role <> 'superadmin') with check (public.is_superadmin() and role <> 'superadmin');
 
 drop policy if exists "approval routes readable" on public.approval_routes;
 create policy "approval routes readable" on public.approval_routes for select using (auth.role() = 'authenticated');
@@ -1598,6 +1590,7 @@ drop policy if exists "requestors create own requests" on public.document_reques
 create policy "requestors create own requests" on public.document_requests for insert with check (
   requestor_id = auth.uid()
   and status in ('Draft', 'Pending Approval')
+  and public.get_my_role() in ('requestor', 'branch_head', 'department_head', 'superadmin')
 );
 drop policy if exists "request visibility by ownership routing and role" on public.document_requests;
 create policy "request visibility by ownership routing and role" on public.document_requests for select using (public.can_view_request(id));
@@ -1688,3 +1681,25 @@ drop policy if exists "app state readable" on public.app_state;
 create policy "app state readable" on public.app_state for select using (public.is_superadmin());
 drop policy if exists "app state managed" on public.app_state;
 create policy "app state managed" on public.app_state for all using (public.is_superadmin()) with check (public.is_superadmin());
+
+insert into storage.buckets (id, name, public)
+values ('profile-avatars', 'profile-avatars', true)
+on conflict (id) do update
+set name = excluded.name,
+    public = excluded.public;
+
+alter table storage.objects enable row level security;
+
+drop policy if exists "profile avatars readable" on storage.objects;
+create policy "profile avatars readable" on storage.objects
+for select
+using (bucket_id = 'profile-avatars');
+
+drop policy if exists "profile avatars upload own files" on storage.objects;
+create policy "profile avatars upload own files" on storage.objects
+for insert
+with check (
+  bucket_id = 'profile-avatars'
+  and auth.uid() is not null
+  and split_part(name, '/', 1) = auth.uid()::text
+);

@@ -24,6 +24,13 @@ function getEnv(name) {
       'SUPABASE_URL',
       'VITE_SUPABASE_URL',
     ],
+    SUPABASE_SERVICE_ROLE_KEY: [
+      'SUPABASE_UPSTREAM_SERVICE_ROLE_KEY',
+      'REACT_APP_SUPABASE_SERVICE_ROLE_KEY',
+      'NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY',
+      'SUPABASE_SERVICE_ROLE_KEY',
+      'VITE_SUPABASE_SERVICE_ROLE_KEY',
+    ],
     SUPABASE_ANON_KEY: [
       'SUPABASE_UPSTREAM_ANON_KEY',
       'REACT_APP_SUPABASE_ANON_KEY',
@@ -44,6 +51,12 @@ function normalizeBearer(token) {
   return value.toLowerCase().startsWith('bearer ') ? value : `Bearer ${value}`;
 }
 
+function extractBearerToken(value) {
+  const token = String(value || '').trim();
+  if (!token) return '';
+  return token.toLowerCase().startsWith('bearer ') ? token.slice(7).trim() : token;
+}
+
 function getClient(accessToken = '', req = null) {
   return createClient(getEnv('SUPABASE_URL'), getEnv('SUPABASE_ANON_KEY'), {
     global: {
@@ -57,6 +70,29 @@ function getClient(accessToken = '', req = null) {
       detectSessionInUrl: false,
     },
   });
+}
+
+function hasServiceRole() {
+  try {
+    return Boolean(getEnv('SUPABASE_SERVICE_ROLE_KEY'));
+  } catch {
+    return false;
+  }
+}
+
+function getWriteClient() {
+  if (!hasServiceRole()) return null;
+  return createClient(getEnv('SUPABASE_URL'), getEnv('SUPABASE_SERVICE_ROLE_KEY'), {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+      detectSessionInUrl: false,
+    },
+  });
+}
+
+function getRequestWriteMode() {
+  return hasServiceRole() ? 'service_role' : 'anon';
 }
 
 function normalizeName(value, fallback = '') {
@@ -126,6 +162,14 @@ function buildRequestRow(payload, profile, existing = null, approver = null) {
   };
 }
 
+async function saveDocumentRequest(client, row) {
+  const { data, error } = await client.rpc('save_document_request', {
+    p_request: row,
+  });
+  if (error) return { data: null, error };
+  return { data, error: null };
+}
+
 async function resolveApprover(client, requestorRole, branch, confidentialityLevel) {
   const { data, error } = await client.rpc('resolve_request_approver', {
     p_requestor_role: requestorRole,
@@ -156,14 +200,19 @@ module.exports = async function handler(req, res) {
   try {
     const payload = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
     const action = String(payload?.action || '');
-    const accessToken = String(payload?.accessToken || '').trim();
+    const accessToken = extractBearerToken(payload?.accessToken || req.headers?.authorization || '');
     const client = getClient(accessToken, req);
+    const writeClient = getWriteClient() || client;
+    const writeMode = getRequestWriteMode();
     const { data: userData, error: userError } = await client.auth.getUser(accessToken || undefined);
     if (userError || !userData?.user) {
-      return json(res, 401, { error: 'Unauthorized.' });
+      return json(res, 401, {
+        error: userError?.message || 'Unauthorized.',
+        code: userError?.code || null,
+      });
     }
 
-    const { data: profile, error: profileError } = await client
+    const { data: profile, error: profileError } = await writeClient
       .from('profiles')
       .select('id, full_name, email, role, branch, department, position, status, is_active')
       .eq('id', userData.user.id)
@@ -180,7 +229,6 @@ module.exports = async function handler(req, res) {
     }
 
     const row = buildRequestRow({ request }, profile, null, null);
-    delete row.id;
     if (!row.document_title) {
       return json(res, 400, { error: 'Document title is required.' });
     }
@@ -188,7 +236,7 @@ module.exports = async function handler(req, res) {
       return json(res, 400, { error: 'Branch is required.' });
     }
 
-    const { data: approver, error: approverError } = await resolveApprover(client, profile.role, row.branch, row.confidentiality_level);
+    const { data: approver, error: approverError } = await resolveApprover(writeClient, profile.role, row.branch, row.confidentiality_level);
     if (approverError) {
       return json(res, 400, { error: approverError.message || 'Failed to resolve approver.' });
     }
@@ -200,17 +248,16 @@ module.exports = async function handler(req, res) {
       row.current_approver_name = approver?.approver_name || row.current_approver_name || null;
     }
 
-    const { data: inserted, error: insertError } = await client
-      .from('document_requests')
-      .insert(row)
-      .select()
-        .single();
+    const { data: inserted, error: insertError } = await saveDocumentRequest(writeClient, row);
+    if (insertError) {
+      return json(res, 400, {
+        error: insertError.message || 'Failed to create request.',
+        writeMode,
+        missingServiceRole: writeMode !== 'service_role',
+      });
+    }
 
-      if (insertError) {
-        return json(res, 400, { error: insertError.message || 'Failed to create request.' });
-      }
-
-      return json(res, 200, { request: inserted });
+    return json(res, 200, { request: Array.isArray(inserted) ? inserted[0] : inserted, writeMode });
     }
 
     if (action === 'save-request') {
@@ -220,7 +267,7 @@ module.exports = async function handler(req, res) {
         return json(res, 400, { error: 'Request id is required.' });
       }
 
-      const { data: existing, error: existingError } = await client
+      const { data: existing, error: existingError } = await writeClient
         .from('document_requests')
         .select('*')
         .eq('id', requestId)
@@ -234,7 +281,7 @@ module.exports = async function handler(req, res) {
         return json(res, 404, { error: 'Request not found.' });
       }
 
-      const { data: canApprove, error: canApproveError } = await client.rpc('can_approve_request', {
+      const { data: canApprove, error: canApproveError } = await writeClient.rpc('can_approve_request', {
         target_request_id: requestId,
       });
 
@@ -266,7 +313,7 @@ module.exports = async function handler(req, res) {
       }
 
       if (row.status === 'Pending Approval') {
-        const { data: approver, error: approverError } = await resolveApprover(client, profile.role, row.branch, row.confidentiality_level);
+        const { data: approver, error: approverError } = await resolveApprover(writeClient, profile.role, row.branch, row.confidentiality_level);
         if (approverError) {
           return json(res, 400, { error: approverError.message || 'Failed to resolve approver.' });
         }
@@ -277,17 +324,16 @@ module.exports = async function handler(req, res) {
         row.current_approver_name = approver.approver_name || row.current_approver_name || null;
       }
 
-      const { data: saved, error: saveError } = await client
-        .from('document_requests')
-        .upsert(row, { onConflict: 'id' })
-        .select()
-        .single();
-
+      const { data: saved, error: saveError } = await saveDocumentRequest(writeClient, row);
       if (saveError) {
-        return json(res, 400, { error: saveError.message || 'Failed to save request.' });
+        return json(res, 400, {
+          error: saveError.message || 'Failed to save request.',
+          writeMode,
+          missingServiceRole: writeMode !== 'service_role',
+        });
       }
 
-      return json(res, 200, { request: saved });
+      return json(res, 200, { request: Array.isArray(saved) ? saved[0] : saved, writeMode });
     }
 
     return json(res, 400, { error: `Unknown action: ${action}` });

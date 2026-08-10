@@ -47,6 +47,13 @@ function normalizeBearer(token) {
 function normalizeRole(role) {
   const value = String(role || '').trim().toLowerCase();
   if (value === 'admin') return 'superadmin';
+  if (['staff/requestor', 'staff-requestor', 'staff requestor', 'requestor', 'staff', 'staff / requestor'].includes(value)) return 'requestor';
+  if (['branch head', 'branch-head', 'branch/head', 'branch head approver', 'manager - approver of requestor', 'manager / approver of requestor'].includes(value)) return 'branch_head';
+  if (['department head', 'department-head', 'department/head', 'head - approver of requestors and managers', 'head / approver of requestors and managers'].includes(value)) return 'department_head';
+  if (['admin/dpo', 'admin - dpo', 'data privacy officer', 'dpo'].includes(value)) return 'dpo';
+  if (['admin/ceo', 'admin - ceo', 'ceo'].includes(value)) return 'ceo';
+  if (['archivist', 'archivist - process approved docs'].includes(value)) return 'archivist';
+  if (['superadmin', 'super admin', 'superadmin / ict', 'super admin / ict', 'super admin - ict', 'ict'].includes(value)) return 'superadmin';
   if (['requestor', 'branch_head', 'department_head', 'sacd_head', 'dpo', 'ceo', 'archivist', 'superadmin'].includes(value)) {
     return value === 'sacd_head' ? 'department_head' : value;
   }
@@ -97,7 +104,7 @@ async function requireSuperAdmin(req) {
     throw new Error('Forbidden.');
   }
 
-  return { adminClient, profile };
+  return { adminClient, profile, callerUserId: userData.user.id };
 }
 
 module.exports = async function handler(req, res) {
@@ -167,7 +174,7 @@ module.exports = async function handler(req, res) {
       return json(res, 200, { profile: updatedProfile });
     }
 
-    const { adminClient, profile: superAdminProfile } = await requireSuperAdmin(req);
+    const { adminClient, profile: superAdminProfile, callerUserId } = await requireSuperAdmin(req);
 
     const email = String(payload?.email || '').trim().toLowerCase();
     const password = String(payload?.password || '');
@@ -234,11 +241,14 @@ module.exports = async function handler(req, res) {
 
       const { data: existingProfile, error: existingError } = await adminClient
         .from('profiles')
-        .select('position')
+        .select('position, role')
         .eq('id', userId)
         .single();
       if (existingError) {
         return json(res, 400, { error: existingError.message || 'Failed to load the current profile.' });
+      }
+      if (normalizeRole(existingProfile?.role) === 'superadmin' && callerUserId !== userId) {
+        return json(res, 403, { error: 'Forbidden.' });
       }
 
       const updates = {};
@@ -303,6 +313,17 @@ module.exports = async function handler(req, res) {
       if (!userId || !nextPassword) {
         return json(res, 400, { error: 'userId and password are required.' });
       }
+      const { data: targetProfile, error: targetError } = await adminClient
+        .from('profiles')
+        .select('role')
+        .eq('id', userId)
+        .single();
+      if (targetError) {
+        return json(res, 400, { error: targetError.message || 'Failed to load the current profile.' });
+      }
+      if (normalizeRole(targetProfile?.role) === 'superadmin' && callerUserId !== userId) {
+        return json(res, 403, { error: 'Forbidden.' });
+      }
       const { data, error } = await adminClient.auth.admin.updateUserById(userId, { password: nextPassword });
       if (error) return json(res, 400, { error: error.message || 'Failed to update password.' });
       return json(res, 200, { user: data.user });
@@ -313,6 +334,17 @@ module.exports = async function handler(req, res) {
       const status = String(payload?.status || '').trim();
       if (!userId || !['Active', 'Inactive'].includes(status)) {
         return json(res, 400, { error: 'userId and a valid status are required.' });
+      }
+      const { data: targetProfile, error: targetError } = await adminClient
+        .from('profiles')
+        .select('role')
+        .eq('id', userId)
+        .single();
+      if (targetError) {
+        return json(res, 400, { error: targetError.message || 'Failed to load the current profile.' });
+      }
+      if (normalizeRole(targetProfile?.role) === 'superadmin' && callerUserId !== userId) {
+        return json(res, 403, { error: 'Forbidden.' });
       }
 
       const { data: updatedProfile, error } = await adminClient
@@ -330,6 +362,17 @@ module.exports = async function handler(req, res) {
       const userId = String(payload?.userId || '').trim();
       if (!userId) {
         return json(res, 400, { error: 'userId is required.' });
+      }
+      const { data: targetProfile, error: targetError } = await adminClient
+        .from('profiles')
+        .select('role')
+        .eq('id', userId)
+        .single();
+      if (targetError) {
+        return json(res, 400, { error: targetError.message || 'Failed to load the current profile.' });
+      }
+      if (normalizeRole(targetProfile?.role) === 'superadmin' && callerUserId !== userId) {
+        return json(res, 403, { error: 'Forbidden.' });
       }
 
       const { error } = await adminClient.rpc('delete_user_account', { p_user_id: userId });
