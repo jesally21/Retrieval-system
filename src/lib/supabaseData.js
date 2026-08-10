@@ -211,6 +211,15 @@ async function fetchTable(table, select = '*', orderBy = 'created_at', ascending
   return data || [];
 }
 
+async function fetchTableSafe(table, select = '*', orderBy = 'created_at', ascending = false) {
+  try {
+    const data = await fetchTable(table, select, orderBy, ascending);
+    return { data, error: null };
+  } catch (error) {
+    return { data: [], error: formatSupabaseError(error, `Failed to load ${table}.`) };
+  }
+}
+
 async function fetchSingleRow(table, id) {
   const { data, error } = await supabase
     .from(table)
@@ -288,6 +297,7 @@ export async function loadSupabaseAppData() {
       branches: [],
       departments: [],
       categories: [],
+      diagnostics: { loadErrors: [], counts: {} },
     };
   }
 
@@ -303,26 +313,40 @@ export async function loadSupabaseAppData() {
     departmentsResult,
     categoriesResult,
   ] = await Promise.all([
-    fetchTable('profiles', '*', 'full_name', true).catch(() => []),
-    fetchTable('document_requests', '*', 'created_at', false).catch(() => []),
-    fetchTable('archivist_processing', '*', 'created_at', false).catch(() => []),
-    fetchTable('electronic_release_links', '*', 'created_at', false).catch(() => []),
-    fetchTable('request_closures', '*', 'created_at', false).catch(() => []),
-    fetchTable('incident_reports', '*', 'created_at', false).catch(() => []),
-    fetchTable('audit_logs', '*', 'created_at', false).catch(() => []),
-    fetchTable('branches', 'name, is_active', 'name', true).catch(() => []),
-    fetchTable('departments', 'name, is_active', 'name', true).catch(() => []),
-    fetchTable('document_categories', 'name, description, is_active', 'name', true).catch(() => []),
+    fetchTableSafe('profiles', '*', 'full_name', true),
+    fetchTableSafe('document_requests', '*', 'created_at', false),
+    fetchTableSafe('archivist_processing', '*', 'created_at', false),
+    fetchTableSafe('electronic_release_links', '*', 'created_at', false),
+    fetchTableSafe('request_closures', '*', 'created_at', false),
+    fetchTableSafe('incident_reports', '*', 'created_at', false),
+    fetchTableSafe('audit_logs', '*', 'created_at', false),
+    fetchTableSafe('branches', 'name, is_active', 'name', true),
+    fetchTableSafe('departments', 'name, is_active', 'name', true),
+    fetchTableSafe('document_categories', 'name, description, is_active', 'name', true),
   ]);
 
-  const users = Array.isArray(profilesResult) ? profilesResult.map(mapProfileRow) : [];
+  const loadErrors = [
+    profilesResult.error,
+    requestsResult.error,
+    processingResult.error,
+    releaseLinksResult.error,
+    closuresResult.error,
+    incidentsResult.error,
+    auditLogsResult.error,
+    branchesResult.error,
+    departmentsResult.error,
+    categoriesResult.error,
+  ].filter(Boolean).map((error) => error.message || String(error));
+  const uniqueLoadErrors = [...new Set(loadErrors)];
+
+  const users = Array.isArray(profilesResult.data) ? profilesResult.data.map(mapProfileRow) : [];
   const usersById = new Map(users.map((user) => [user.id, user]));
-  const requests = Array.isArray(requestsResult) ? requestsResult.map((row) => mapRequestRow(row, usersById)) : [];
-  const processing = Object.fromEntries((Array.isArray(processingResult) ? processingResult : []).map((row) => [row.request_id, mapProcessingRow(row, usersById)]));
-  const electronicReleaseLinks = Object.fromEntries((Array.isArray(releaseLinksResult) ? releaseLinksResult : []).map((row) => [row.request_id, mapElectronicReleaseLinkRow(row, usersById)]));
-  const closures = Object.fromEntries((Array.isArray(closuresResult) ? closuresResult : []).map((row) => [row.request_id, mapClosureRow(row, usersById)]));
-  const incidents = Array.isArray(incidentsResult) ? incidentsResult.map((row) => mapIncidentRow(row, usersById)) : [];
-  const auditLogs = Array.isArray(auditLogsResult) ? auditLogsResult.map((row) => mapAuditLogRow(row, usersById)) : [];
+  const requests = Array.isArray(requestsResult.data) ? requestsResult.data.map((row) => mapRequestRow(row, usersById)) : [];
+  const processing = Object.fromEntries((Array.isArray(processingResult.data) ? processingResult.data : []).map((row) => [row.request_id, mapProcessingRow(row, usersById)]));
+  const electronicReleaseLinks = Object.fromEntries((Array.isArray(releaseLinksResult.data) ? releaseLinksResult.data : []).map((row) => [row.request_id, mapElectronicReleaseLinkRow(row, usersById)]));
+  const closures = Object.fromEntries((Array.isArray(closuresResult.data) ? closuresResult.data : []).map((row) => [row.request_id, mapClosureRow(row, usersById)]));
+  const incidents = Array.isArray(incidentsResult.data) ? incidentsResult.data.map((row) => mapIncidentRow(row, usersById)) : [];
+  const auditLogs = Array.isArray(auditLogsResult.data) ? auditLogsResult.data.map((row) => mapAuditLogRow(row, usersById)) : [];
 
   return {
     users,
@@ -332,9 +356,24 @@ export async function loadSupabaseAppData() {
     closures,
     incidents,
     auditLogs,
-    branches: uniqueStrings((branchesResult || []).map((row) => row.name)),
-    departments: uniqueStrings((departmentsResult || []).map((row) => row.name)),
-    categories: uniqueStrings((categoriesResult || []).map((row) => row.name)),
+    branches: uniqueStrings((branchesResult.data || []).map((row) => row.name)),
+    departments: uniqueStrings((departmentsResult.data || []).map((row) => row.name)),
+    categories: uniqueStrings((categoriesResult.data || []).map((row) => row.name)),
+    diagnostics: {
+      loadErrors: uniqueLoadErrors,
+      counts: {
+        profiles: users.length,
+        document_requests: requests.length,
+        archivist_processing: Object.keys(processing).length,
+        electronic_release_links: Object.keys(electronicReleaseLinks).length,
+        request_closures: Object.keys(closures).length,
+        incident_reports: incidents.length,
+        audit_logs: auditLogs.length,
+        branches: uniqueStrings((branchesResult.data || []).map((row) => row.name)).length,
+        departments: uniqueStrings((departmentsResult.data || []).map((row) => row.name)).length,
+        document_categories: uniqueStrings((categoriesResult.data || []).map((row) => row.name)).length,
+      },
+    },
   };
 }
 

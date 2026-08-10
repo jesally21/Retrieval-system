@@ -472,6 +472,30 @@ export async function resetUserPassword({ userId, password }) {
   }
 }
 
+export async function reassignProfilesToSuperAdmin() {
+  if (!supabase) return { data: null, error: new Error('Supabase is not configured.') };
+  try {
+    const data = await invokeAdminApi({
+      action: 'reassign-profiles-to-superadmin',
+    });
+    return { data, error: null };
+  } catch (error) {
+    return { data: null, error: normalizeAuthFailure(error, 'Failed to reassign profiles to the super admin.') };
+  }
+}
+
+export async function loadAdminDashboardData() {
+  if (!supabase) return { data: null, error: new Error('Supabase is not configured.') };
+  try {
+    const data = await invokeAdminApi({
+      action: 'load-dashboard-data',
+    });
+    return { data, error: null };
+  } catch (error) {
+    return { data: null, error: normalizeAuthFailure(error, 'Failed to load super admin data.') };
+  }
+}
+
 export async function toggleUserStatus({ userId, status }) {
   if (!supabase) return { data: null, error: new Error('Supabase is not configured.') };
   try {

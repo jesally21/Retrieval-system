@@ -70,6 +70,16 @@ function getAdminClient() {
   });
 }
 
+async function fetchAll(adminClient, table, select = '*', orderBy = 'created_at', ascending = false) {
+  let query = adminClient.from(table).select(select);
+  if (orderBy) {
+    query = query.order(orderBy, { ascending });
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+}
+
 function getCallerClient(req) {
   return createClient(getEnv('SUPABASE_URL'), getEnv('SUPABASE_SERVICE_ROLE_KEY'), {
     global: {
@@ -221,6 +231,7 @@ module.exports = async function handler(req, res) {
           role,
           status: 'Active',
           is_active: true,
+          created_by: callerUserId,
           created_by_name: superAdminProfile.full_name,
         }, { onConflict: 'id' })
         .select()
@@ -231,6 +242,72 @@ module.exports = async function handler(req, res) {
       }
 
       return json(res, 200, { user: created.user, profile: syncedProfile });
+    }
+
+    if (action === 'load-dashboard-data') {
+      const [
+        profiles,
+        requests,
+        processing,
+        releaseLinks,
+        closures,
+        incidents,
+        auditLogs,
+        branches,
+        departments,
+        categories,
+      ] = await Promise.all([
+        fetchAll(adminClient, 'profiles', '*', 'full_name', true),
+        fetchAll(adminClient, 'document_requests', '*', 'created_at', false),
+        fetchAll(adminClient, 'archivist_processing', '*', 'created_at', false),
+        fetchAll(adminClient, 'electronic_release_links', '*', 'created_at', false),
+        fetchAll(adminClient, 'request_closures', '*', 'created_at', false),
+        fetchAll(adminClient, 'incident_reports', '*', 'created_at', false),
+        fetchAll(adminClient, 'audit_logs', '*', 'created_at', false),
+        fetchAll(adminClient, 'branches', 'name, is_active', 'name', true),
+        fetchAll(adminClient, 'departments', 'name, is_active', 'name', true),
+        fetchAll(adminClient, 'document_categories', 'name, description, is_active', 'name', true),
+      ]);
+
+      return json(res, 200, {
+        users: profiles,
+        requests,
+        processing,
+        electronicReleaseLinks: releaseLinks,
+        closures,
+        incidents,
+        auditLogs,
+        branches: branches.map((row) => row.name).filter(Boolean),
+        departments: departments.map((row) => row.name).filter(Boolean),
+        categories: categories.map((row) => row.name).filter(Boolean),
+        diagnostics: {
+          loadErrors: [],
+          counts: {
+            profiles: profiles.length,
+            document_requests: requests.length,
+            archivist_processing: processing.length,
+            electronic_release_links: releaseLinks.length,
+            request_closures: closures.length,
+            incident_reports: incidents.length,
+            audit_logs: auditLogs.length,
+            branches: branches.length,
+            departments: departments.length,
+            document_categories: categories.length,
+          },
+        },
+      });
+    }
+
+    if (action === 'reassign-profiles-to-superadmin') {
+      const { data, error } = await adminClient.rpc('reassign_profiles_to_superadmin', {
+        p_superadmin_id: callerUserId,
+      });
+
+      if (error) {
+        return json(res, 400, { error: error.message || 'Failed to reassign profiles.' });
+      }
+
+      return json(res, 200, { updatedCount: data ?? 0 });
     }
 
     if (action === 'update-user') {

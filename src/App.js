@@ -8,6 +8,8 @@ import {
   getCurrentSessionUser,
   signInWithEmailPassword,
   signOut as supabaseSignOut,
+  loadAdminDashboardData,
+  reassignProfilesToSuperAdmin,
   updateOwnProfile,
   updateUserAccount,
 } from './lib/supabaseAuth';
@@ -387,6 +389,19 @@ function canManageRequestFromList(user, request) {
     && ['Draft', 'Returned'].includes(request.status);
 }
 
+async function loadDashboardState(profile) {
+  if (normalizeRole(profile?.role) === 'superadmin' && supabaseConfig.isConfigured && supabase) {
+    const { data, error } = await loadAdminDashboardData();
+    if (!error && data) {
+      return data;
+    }
+    if (error) {
+      console.error('Super admin dashboard load failed:', readErrorMessage(error));
+    }
+  }
+  return loadSupabaseAppData().catch(() => null);
+}
+
 function getInjectedTestSessionProfile() {
   if (typeof window === 'undefined') return null;
   return window.__TEST_SESSION_PROFILE__ || null;
@@ -412,8 +427,11 @@ function App() {
   const [authReady, setAuthReady] = useState(() => Boolean(injectedTestSessionProfile));
   const [isHydrated, setIsHydrated] = useState(false);
   const [sessionProfile, setSessionProfile] = useState(() => injectedTestSessionProfile);
+  const [loadDiagnostics, setLoadDiagnostics] = useState({ loadErrors: [], counts: {} });
   const manualLogoutRef = useRef(false);
   const currentUser = users.find((user) => user.id === currentUserId) || sessionProfile || null;
+  const currentRole = normalizeRole(currentUser?.role);
+  const isSuperAdmin = currentRole === 'superadmin';
   const setPath = useCallback((nextPath, options = {}) => {
     setPathState((currentPath) => {
       const resolvedPath = typeof nextPath === 'function' ? nextPath(currentPath) : nextPath;
@@ -461,6 +479,10 @@ function App() {
         departments: data.departments,
         categories: data.categories,
       }));
+      setLoadDiagnostics({
+        loadErrors: Array.isArray(data?.diagnostics?.loadErrors) ? data.diagnostics.loadErrors : [],
+        counts: data?.diagnostics?.counts || {},
+      });
       setIsHydrated(true);
       setAuthReady(true);
     };
@@ -502,7 +524,7 @@ function App() {
         setIsHydrated(true);
         return;
       }
-      const databaseState = await loadSupabaseAppData().catch(() => null);
+      const databaseState = await loadDashboardState(loadedProfile || mapAuthUserToProfile(user));
       if (cancelled) return;
       if (!databaseState) {
         await applyLoadedData({
@@ -517,6 +539,7 @@ function App() {
           branches: [],
           departments: [],
           categories: [],
+          diagnostics: { loadErrors: ['Failed to load Supabase data.'], counts: {} },
         });
         if (loadedProfile) {
           setUsers((items) => {
@@ -533,6 +556,9 @@ function App() {
         departments: Array.isArray(databaseState.departments) ? databaseState.departments : [],
         categories: Array.isArray(databaseState.categories) ? databaseState.categories : [],
       });
+      if (Array.isArray(databaseState?.diagnostics?.loadErrors) && databaseState.diagnostics.loadErrors.length) {
+        console.error('Supabase load warnings:', databaseState.diagnostics.loadErrors);
+      }
       if (loadedProfile) {
         setUsers((items) => {
           const filtered = items.filter((item) => item.id !== loadedProfile.id);
@@ -557,24 +583,27 @@ function App() {
             const filtered = items.filter((item) => item.id !== profile.id);
             return [profile, ...filtered];
           });
-          const databaseState = await loadSupabaseAppData().catch(() => null);
+
+          const databaseState = await loadDashboardState(profile);
           if (cancelled) return;
           if (!databaseState) {
             await applyLoadedData({
               users: [],
-          requests: [],
-          processing: {},
-          electronicReleaseLinks: {},
-          closures: {},
+              requests: [],
+              processing: {},
+              electronicReleaseLinks: {},
+              closures: {},
               incidents: [],
               auditLogs: [],
               settings: normalizeLoadedSettings({}),
               branches: [],
               departments: [],
               categories: [],
+              diagnostics: { loadErrors: ['Failed to load Supabase data.'], counts: {} },
             });
             return;
           }
+
           await applyLoadedData({
             ...databaseState,
             users: normalizeLoadedUsers(databaseState.users || []),
@@ -582,6 +611,9 @@ function App() {
             departments: Array.isArray(databaseState.departments) ? databaseState.departments : [],
             categories: Array.isArray(databaseState.categories) ? databaseState.categories : [],
           });
+          if (Array.isArray(databaseState?.diagnostics?.loadErrors) && databaseState.diagnostics.loadErrors.length) {
+            console.error('Supabase load warnings:', databaseState.diagnostics.loadErrors);
+          }
           setUsers((items) => {
             const filtered = items.filter((item) => item.id !== profile.id);
             return [profile, ...filtered];
@@ -601,6 +633,7 @@ function App() {
         setIncidents([]);
         setAuditLogs([]);
         setSettingsSnapshot({ branches: [], departments: [], categories: [] });
+        setLoadDiagnostics({ loadErrors: [], counts: {} });
         setAuthReady(true);
         setIsHydrated(true);
       });
@@ -617,14 +650,14 @@ function App() {
     if (!isHydrated || !supabase || !currentUserId) return undefined;
 
     const refreshRequestsFromDatabase = async () => {
-      const databaseState = await loadSupabaseAppData().catch(() => null);
+      const databaseState = await loadDashboardState(currentUser);
       if (!databaseState) return;
       setRequests(databaseState.requests || []);
       setProcessing(databaseState.processing || {});
       setClosures(databaseState.closures || {});
       setIncidents(databaseState.incidents || []);
       setAuditLogs(databaseState.auditLogs || []);
-      if (currentUser?.role && superAdminRoles.includes(currentUser.role)) {
+      if (isSuperAdmin) {
         setUsers(normalizeLoadedUsers(databaseState.users || []));
       }
     };
@@ -639,7 +672,7 @@ function App() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [isHydrated, currentUserId, currentUser?.role]);
+  }, [isHydrated, currentUserId, currentUser, isSuperAdmin]);
 
   useEffect(() => {
     document.body.classList.toggle('dark', theme === 'dark');
@@ -1070,6 +1103,12 @@ function App() {
     <div className={`app-shell ${theme} ${isMobileMenuOpen ? 'menu-open' : ''}`}>
       <Sidebar user={currentUser} path={path} setPath={setPath} isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
       <main className="workspace">
+        {loadDiagnostics.loadErrors.length > 0 && (
+          <div className="ui-alert ui-alert--warning">
+            <strong>Supabase load warning:</strong>
+            <div>{loadDiagnostics.loadErrors.join(' ')}</div>
+          </div>
+        )}
         <Header user={currentUser} onLogout={async () => { manualLogoutRef.current = true; await supabaseSignOut(); setCurrentUserId(''); setSessionProfile(null); setPath('/login', { replace: true }); }} onUpdateProfile={updateCurrentUserProfile} theme={theme} setTheme={setTheme} isMobileMenuOpen={isMobileMenuOpen} onMenuToggle={() => setIsMobileMenuOpen((isOpen) => !isOpen)} />
         {!allowedPath && <RoleDenied setPath={setPath} />}
         {allowedPath && path === '/dashboard' && <Dashboard {...pageProps} />}
@@ -2472,6 +2511,8 @@ function Users({ users, setUsers, currentUserId, currentUser, branchesList, depa
   const [showEditPassword, setShowEditPassword] = useState(false);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [isReassigningProfiles, setIsReassigningProfiles] = useState(false);
+  const [notice, setNotice] = useState('');
   const [errors, setErrors] = useState([]);
 
   useEffect(() => {
@@ -2509,6 +2550,27 @@ function Users({ users, setUsers, currentUserId, currentUser, branchesList, depa
     setDraft({});
     setShowEditPassword(false);
     setErrors([]);
+  };
+
+  const reassignAllProfiles = async () => {
+    const confirmed = window.confirm('Reassign every non-superadmin profile to your super admin account?');
+    if (!confirmed) return;
+
+    setErrors([]);
+    setNotice('');
+    setIsReassigningProfiles(true);
+    try {
+      const { data, error } = await reassignProfilesToSuperAdmin();
+      if (error) {
+        setErrors([readErrorMessage(error, 'Failed to reassign profiles.')]);
+        return;
+      }
+
+      const updatedCount = Number(data?.updatedCount ?? 0);
+      setNotice(`Updated ${updatedCount} profile${updatedCount === 1 ? '' : 's'} to use your super admin account as creator.`);
+    } finally {
+      setIsReassigningProfiles(false);
+    }
   };
 
   const saveEdit = async () => {
@@ -2684,6 +2746,7 @@ function Users({ users, setUsers, currentUserId, currentUser, branchesList, depa
             department,
             role: newUser.role,
             avatar_url: avatar,
+            created_by: currentUser?.id || currentUserId || null,
             created_by_name: creatorName,
           },
         });
@@ -2745,10 +2808,16 @@ function Users({ users, setUsers, currentUserId, currentUser, branchesList, depa
     <section className="page users-page">
       <PageTitle title="User Management" subtitle={`Admin view of users, roles, branches, departments, and active status. ${supabaseConfig.isConfigured ? 'Supabase sync on.' : 'Supabase sync off.'} All profiles from the database are shown here.`} />
       {errors.length > 0 && <AlertList items={errors} />}
+      {notice && <div className="ui-alert">{notice}</div>}
       <div className="table-card add-user-card">
         <h3>Create User Account</h3>
         <p className="helper-text">Only super admins can create accounts here. Click the button to open the account form.</p>
-        <Button className="create-user-button" type="button" onClick={() => setIsCreateUserModalOpen(true)}>Create User</Button>
+        <div className="actions" style={{ gap: '0.75rem', flexWrap: 'wrap' }}>
+          <Button className="create-user-button" type="button" onClick={() => setIsCreateUserModalOpen(true)}>Create User</Button>
+          <Button variant="secondary" type="button" onClick={() => { void reassignAllProfiles(); }} disabled={isReassigningProfiles}>
+            {isReassigningProfiles ? 'Reassigning...' : 'Assign All Profiles to My Account'}
+          </Button>
+        </div>
       </div>
       <div className="table-card">
         <Table>
