@@ -338,6 +338,7 @@ export async function loadSupabaseAppData() {
     categoriesResult.error,
   ].filter(Boolean).map((error) => error.message || String(error));
   const uniqueLoadErrors = [...new Set(loadErrors)];
+  const visibleLoadErrors = uniqueLoadErrors.filter((message) => !/failed to fetch|typeerror:\s*failed to fetch/i.test(String(message)));
 
   const users = Array.isArray(profilesResult.data) ? profilesResult.data.map(mapProfileRow) : [];
   const usersById = new Map(users.map((user) => [user.id, user]));
@@ -360,7 +361,7 @@ export async function loadSupabaseAppData() {
     departments: uniqueStrings((departmentsResult.data || []).map((row) => row.name)),
     categories: uniqueStrings((categoriesResult.data || []).map((row) => row.name)),
     diagnostics: {
-      loadErrors: uniqueLoadErrors,
+      loadErrors: visibleLoadErrors,
       counts: {
         profiles: users.length,
         document_requests: requests.length,

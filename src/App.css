@@ -321,6 +321,34 @@ body.light td {
   color: #000;
 }
 
+body.light .requests-page .table-card,
+body.light .approval-page .queue-card,
+body.light .archivist-page .queue-card,
+body.light .incidents-page .table-card,
+body.light .reports-page .table-card,
+body.light .users-page .table-card,
+body.light .users-page .add-user-card,
+body.light .settings-page .info-card,
+body.light .settings-page .table-card,
+body.light .settings-page .list-item,
+body.light .audit-logs-page .table-card {
+  background: #fff8de;
+  border: 1px solid #efdca2;
+  box-shadow: 0 10px 24px rgba(176, 146, 53, 0.08);
+}
+
+body.light .requests-page .table-card table,
+body.light .approval-page .queue-card,
+body.light .archivist-page .queue-card,
+body.light .incidents-page .table-card table,
+body.light .reports-page .table-card table,
+body.light .users-page .table-card table,
+body.light .settings-page .info-card,
+body.light .settings-page .table-card table,
+body.light .audit-logs-page .table-card table {
+  background: rgba(255, 251, 240, 0.9);
+}
+
 body.light input::placeholder,
 body.light textarea::placeholder {
   color: #1f2937;
@@ -2167,6 +2195,41 @@ body.dark .login-panel {
 .create-user-actions {
   justify-content: flex-end;
   margin-top: 2px;
+}
+
+.settings-dropdown-header {
+  width: 100%;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.settings-dropdown-header .helper-text {
+  margin-top: 4px;
+  display: block;
+}
+
+.settings-dropdown-label {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.settings-scroll-list {
+  max-height: 320px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.settings-scroll-list .list-item {
+  cursor: pointer;
 }
 
 .edit-user-actions {
@@ -5175,13 +5238,24 @@ body.light .dashboard-page .overview-donut span {
   gap: 5px;
 }
 
+.settings-page .settings-empty {
+  padding: 8px 10px;
+  border: 1px dashed rgba(148, 163, 184, 0.28);
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .settings-page .list-item {
-  min-height: 40px;
-  padding: 7px 10px;
+  min-height: 36px;
+  padding: 6px 8px;
   gap: 8px;
 }
 
 .settings-page .list-item span {
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
   line-height: 1.15;
 }
 
@@ -5190,8 +5264,41 @@ body.light .dashboard-page .overview-donut span {
 }
 
 .settings-page .list-item .action-group button {
-  min-height: 30px;
-  padding-inline: 10px;
+  min-height: 26px;
+  padding-inline: 8px;
+  font-size: 10px;
+}
+
+.settings-page .settings-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-page .settings-pagination-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+body.dark .settings-page .card-header h3,
+body.dark .settings-page .helper-text,
+body.dark .settings-page .list-item span,
+body.dark .settings-page .settings-pagination-label,
+body.dark .settings-page .settings-empty {
+  color: #ffffff;
+}
+
+body.dark .settings-page .settings-pagination {
+  border-top-color: rgba(255, 255, 255, 0.12);
+}
+
+body.dark .settings-page .settings-empty {
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .settings-page .add-inline-form {

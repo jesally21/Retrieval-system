@@ -84,6 +84,7 @@ async function invokeAdminApi(body) {
       const response = await fetch(url, {
         method: 'POST',
         headers,
+        credentials: 'omit',
         body: JSON.stringify(body),
       });
 
@@ -148,7 +149,18 @@ async function createUserDirectly({ email, password, profile }) {
   }
 
   if (newUser?.id) {
-    const profileRow = {
+    const profileQuery = supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', newUser.id)
+      .maybeSingle();
+
+    const { data: syncedProfile, error: profileError } = await profileQuery;
+    if (profileError) {
+      return { data: null, error: normalizeAuthFailure(profileError, 'Failed to create user account.') };
+    }
+
+    const fallbackProfile = {
       id: newUser.id,
       full_name: metadata.full_name || newUser.email || 'User',
       email: email.toLowerCase(),
@@ -163,21 +175,11 @@ async function createUserDirectly({ email, password, profile }) {
       is_active: true,
     };
 
-    const { data: syncedProfile, error: profileError } = await supabase
-      .from('profiles')
-      .upsert(profileRow, { onConflict: 'id' })
-      .select()
-      .single();
-
-    if (profileError) {
-      return { data: null, error: normalizeAuthFailure(profileError, 'Failed to create user account.') };
-    }
-
     return {
       data: {
         user: newUser,
         session: data?.session || null,
-        profile: syncedProfile,
+        profile: syncedProfile || fallbackProfile,
         fallbackUsed: true,
       },
       error: null,
@@ -197,6 +199,16 @@ async function createUserDirectly({ email, password, profile }) {
 function isRetryableConnectionError(error) {
   const message = String(error?.message || '');
   return /404|failed to fetch|NetworkError|Missing environment variable|Unable to reach Supabase/i.test(message);
+}
+
+function isFetchFailure(error) {
+  const message = String(error?.message || '');
+  return /failed to fetch|NetworkError|fetch/i.test(message);
+}
+
+function isHeaderTooLargeFailure(error) {
+  const message = String(error?.message || '');
+  return /\b431\b|request header fields too large|header too large/i.test(message);
 }
 
 async function updateProfileDirectly(userId, profile) {
@@ -313,7 +325,7 @@ export async function createUserAccount({ email, password, profile }) {
       lastError = result.error;
     } catch (error) {
       lastError = error;
-      if (!isRetryableConnectionError(error)) {
+      if (!(isRetryableConnectionError(error) || isHeaderTooLargeFailure(error))) {
         return { data: null, error: normalizeAuthFailure(error, 'Create user failed.') };
       }
     }
@@ -417,12 +429,23 @@ export async function updateOwnProfile({ userId, profile }) {
     let updatedUser = currentUser;
     let updatedSession = currentSession;
     if (Object.keys(authUpdate).length > 0) {
-      const { data: authData, error: authError } = await supabase.auth.updateUser(authUpdate);
-      if (authError) {
-        return { data: null, error: normalizeAuthFailure(authError, 'Failed to update profile.') };
+      try {
+        const { data: authData, error: authError } = await supabase.auth.updateUser(authUpdate);
+        if (authError) {
+          if ((metadataChanged && !emailChanged && !passwordChanged) && isFetchFailure(authError)) {
+            // The profile row update below will still persist the new avatar/name.
+          } else {
+            return { data: null, error: normalizeAuthFailure(authError, 'Failed to update profile.') };
+          }
+        } else {
+          updatedUser = authData?.user || updatedUser;
+          updatedSession = authData?.session || updatedSession;
+        }
+      } catch (authError) {
+        if (!((metadataChanged && !emailChanged && !passwordChanged) && isFetchFailure(authError))) {
+          return { data: null, error: normalizeAuthFailure(authError, 'Failed to update profile.') };
+        }
       }
-      updatedUser = authData?.user || updatedUser;
-      updatedSession = authData?.session || updatedSession;
     }
 
     const profileUpdate = {

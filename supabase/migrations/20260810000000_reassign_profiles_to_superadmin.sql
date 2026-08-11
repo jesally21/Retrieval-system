@@ -26,8 +26,7 @@ begin
     set created_by = p_superadmin_id,
         created_by_name = superadmin_profile.full_name,
         updated_at = now()
-    where id <> p_superadmin_id
-      and role <> 'superadmin';
+    where id is not null;
 
   get diagnostics updated_count = row_count;
   return updated_count;

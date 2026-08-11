@@ -1197,7 +1197,7 @@ security definer
 set search_path = public
 stable
 as $$
-  select coalesce(public.get_my_role() in ('admin', 'superadmin'), false)
+  select coalesce(public.get_my_role() = 'superadmin', false)
 $$;
 
 create or replace function public.is_archivist()
@@ -1250,6 +1250,12 @@ as $$
       and (
         dr.requestor_id = auth.uid()
         or dr.current_approver_id = auth.uid()
+        or exists (
+          select 1
+          from public.approval_actions aa
+          where aa.request_id = dr.id
+            and aa.approver_id = auth.uid()
+        )
         or dr.assigned_archivist_id = auth.uid()
         or public.is_archivist()
         or public.is_executive_or_privacy()
@@ -1653,9 +1659,9 @@ drop policy if exists "approval actions inserted by approvers" on public.approva
 create policy "approval actions inserted by approvers" on public.approval_actions for insert with check (approver_id = auth.uid() and (public.can_approve_request(request_id) or public.is_admin()));
 
 drop policy if exists "archivist processing visible to authorized users" on public.archivist_processing;
-create policy "archivist processing visible to authorized users" on public.archivist_processing for select using (public.can_view_request(request_id) or public.is_archivist());
+create policy "archivist processing visible to authorized users" on public.archivist_processing for select using (public.can_view_request(request_id) or public.is_archivist() or public.is_superadmin());
 drop policy if exists "archivists manage processing" on public.archivist_processing;
-create policy "archivists manage processing" on public.archivist_processing for all using (public.is_archivist() or public.is_admin()) with check (public.is_archivist() or public.is_admin());
+create policy "archivists manage processing" on public.archivist_processing for all using (public.is_archivist() or public.is_superadmin()) with check (public.is_archivist() or public.is_superadmin());
 
 drop policy if exists "electronic release links visible to request participants" on public.electronic_release_links;
 create policy "electronic release links visible to request participants" on public.electronic_release_links for select using (
@@ -1676,18 +1682,29 @@ create policy "archivists manage electronic release links" on public.electronic_
 );
 
 drop policy if exists "closures visible to authorized users" on public.request_closures;
-create policy "closures visible to authorized users" on public.request_closures for select using (public.can_view_request(request_id) or public.is_archivist());
+create policy "closures visible to authorized users" on public.request_closures for select using (public.can_view_request(request_id) or public.is_archivist() or public.is_superadmin());
 drop policy if exists "archivists manage closures" on public.request_closures;
-create policy "archivists manage closures" on public.request_closures for all using (public.is_archivist() or public.is_admin()) with check (public.is_archivist() or public.is_admin());
+create policy "archivists manage closures" on public.request_closures for all using (public.is_archivist() or public.is_superadmin()) with check (public.is_archivist() or public.is_superadmin());
 
 drop policy if exists "incident visibility" on public.incident_reports;
 create policy "incident visibility" on public.incident_reports for select using (
-  public.get_my_role() in ('archivist', 'dpo', 'ceo') or public.can_view_request(request_id)
+  public.is_superadmin()
+  or public.get_my_role() in ('archivist', 'dpo', 'ceo')
+  or public.can_view_request(request_id)
 );
 drop policy if exists "authorized users create incidents" on public.incident_reports;
-create policy "authorized users create incidents" on public.incident_reports for insert with check (public.get_my_role() in ('admin', 'archivist', 'dpo', 'ceo'));
+create policy "authorized users create incidents" on public.incident_reports for insert with check (
+  public.is_superadmin()
+  or public.get_my_role() in ('admin', 'archivist', 'dpo', 'ceo')
+);
 drop policy if exists "admins archivists update incidents" on public.incident_reports;
-create policy "admins archivists update incidents" on public.incident_reports for update using (public.get_my_role() in ('admin', 'archivist', 'dpo', 'ceo')) with check (public.get_my_role() in ('admin', 'archivist', 'dpo', 'ceo'));
+create policy "admins archivists update incidents" on public.incident_reports for update using (
+  public.is_superadmin()
+  or public.get_my_role() in ('admin', 'archivist', 'dpo', 'ceo')
+) with check (
+  public.is_superadmin()
+  or public.get_my_role() in ('admin', 'archivist', 'dpo', 'ceo')
+);
 
 drop policy if exists "attachments visible to request participants" on public.request_attachments;
 create policy "attachments visible to request participants" on public.request_attachments for select using (public.can_view_request(request_id));

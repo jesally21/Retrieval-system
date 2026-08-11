@@ -9,7 +9,6 @@ import {
   signInWithEmailPassword,
   signOut as supabaseSignOut,
   loadAdminDashboardData,
-  reassignProfilesToSuperAdmin,
   updateOwnProfile,
   updateUserAccount,
 } from './lib/supabaseAuth';
@@ -49,8 +48,38 @@ const roles = {
 const adminRoles = ['superadmin', 'ceo', 'dpo'];
 const superAdminRoles = ['superadmin'];
 
-const branches = [];
-const departments = [];
+const branches = [
+  'Barbaza',
+  'Culasi',
+  'Sibalom',
+  'San Jose',
+  'Balasan',
+  'Barotac Viejo',
+  'Caticlan',
+  'Molo',
+  'Kalibo',
+  'Janiuay',
+  'Calinog',
+  'Sara',
+  'Pres. Roxas',
+  'Altavas',
+];
+const departments = [
+  'ICT Department',
+  'Membership & Marketing Department',
+  'Savings & Credit Department',
+  'Finance & Accounting Department',
+  'Human Resources & Administration Department',
+  'Internal Audit Department',
+];
+const documentCategories = [
+  'Member Records',
+  'Finance Records',
+  'HR Records',
+  'Board Records',
+  'Compliance Records',
+  'ICT Records',
+];
 const statuses = ['Draft', 'Pending Approval', 'Rejected', 'Approved', 'Forwarded to Archivist', 'Processing', 'Released', 'Returned', 'Access Revoked', 'Deletion Confirmed', 'For Closure', 'Closed', 'Incident Reported', 'Overdue'];
 const confidentialityLevels = ['Non Confidential', 'Confidential'];
 
@@ -396,7 +425,10 @@ async function loadDashboardState(profile) {
       return data;
     }
     if (error) {
-      console.error('Super admin dashboard load failed:', readErrorMessage(error));
+      const message = readErrorMessage(error);
+      if (!/failed to fetch/i.test(message)) {
+        console.error('Super admin dashboard load failed:', message);
+      }
     }
   }
   return loadSupabaseAppData().catch(() => null);
@@ -432,6 +464,11 @@ function App() {
   const currentUser = users.find((user) => user.id === currentUserId) || sessionProfile || null;
   const currentRole = normalizeRole(currentUser?.role);
   const isSuperAdmin = currentRole === 'superadmin';
+  const visibleLoadWarnings = useMemo(
+    () => (Array.isArray(loadDiagnostics.loadErrors) ? loadDiagnostics.loadErrors : [])
+      .filter((message) => !/failed to fetch/i.test(String(message))),
+    [loadDiagnostics.loadErrors],
+  );
   const setPath = useCallback((nextPath, options = {}) => {
     setPathState((currentPath) => {
       const resolvedPath = typeof nextPath === 'function' ? nextPath(currentPath) : nextPath;
@@ -557,7 +594,10 @@ function App() {
         categories: Array.isArray(databaseState.categories) ? databaseState.categories : [],
       });
       if (Array.isArray(databaseState?.diagnostics?.loadErrors) && databaseState.diagnostics.loadErrors.length) {
-        console.error('Supabase load warnings:', databaseState.diagnostics.loadErrors);
+        const warnings = databaseState.diagnostics.loadErrors.filter((message) => !/failed to fetch/i.test(String(message)));
+        if (warnings.length) {
+          console.error('Supabase load warnings:', warnings);
+        }
       }
       if (loadedProfile) {
         setUsers((items) => {
@@ -612,7 +652,10 @@ function App() {
             categories: Array.isArray(databaseState.categories) ? databaseState.categories : [],
           });
           if (Array.isArray(databaseState?.diagnostics?.loadErrors) && databaseState.diagnostics.loadErrors.length) {
-            console.error('Supabase load warnings:', databaseState.diagnostics.loadErrors);
+            const warnings = databaseState.diagnostics.loadErrors.filter((message) => !/failed to fetch/i.test(String(message)));
+            if (warnings.length) {
+              console.error('Supabase load warnings:', warnings);
+            }
           }
           setUsers((items) => {
             const filtered = items.filter((item) => item.id !== profile.id);
@@ -933,6 +976,7 @@ function App() {
     }
 
     if (avatarFile) {
+      const fallbackAvatar = await readFileAsDataUrl(avatarFile);
       if (supabaseConfig.isConfigured && supabase) {
         const { data: uploadedAvatar, error: uploadError } = await uploadAvatarToStorage({
           userId: currentUser.id,
@@ -940,16 +984,13 @@ function App() {
         });
 
         if (uploadError) {
-          const bucketMissing = /bucket not found/i.test(String(uploadError.message || ''));
-          if (!bucketMissing) {
-            return { errors: [readErrorMessage(uploadError, 'Failed to upload profile picture.')] };
-          }
-          avatar = await readFileAsDataUrl(avatarFile);
+          console.warn('Profile avatar upload failed, saving inline fallback instead:', uploadError);
+          avatar = fallbackAvatar;
         } else {
           avatar = uploadedAvatar?.avatarUrl || avatar;
         }
       } else {
-        avatar = await readFileAsDataUrl(avatarFile);
+        avatar = fallbackAvatar;
       }
     }
 
@@ -1103,10 +1144,10 @@ function App() {
     <div className={`app-shell ${theme} ${isMobileMenuOpen ? 'menu-open' : ''}`}>
       <Sidebar user={currentUser} path={path} setPath={setPath} isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
       <main className="workspace">
-        {loadDiagnostics.loadErrors.length > 0 && (
+        {visibleLoadWarnings.length > 0 && (
           <div className="ui-alert ui-alert--warning">
             <strong>Supabase load warning:</strong>
-            <div>{loadDiagnostics.loadErrors.join(' ')}</div>
+            <div>{visibleLoadWarnings.join(' ')}</div>
           </div>
         )}
         <Header user={currentUser} onLogout={async () => { manualLogoutRef.current = true; await supabaseSignOut(); setCurrentUserId(''); setSessionProfile(null); setPath('/login', { replace: true }); }} onUpdateProfile={updateCurrentUserProfile} theme={theme} setTheme={setTheme} isMobileMenuOpen={isMobileMenuOpen} onMenuToggle={() => setIsMobileMenuOpen((isOpen) => !isOpen)} />
@@ -2040,7 +2081,7 @@ function ReactLineChart({ data, selectedDate, onSelectDate }) {
   );
 }
 
-function PageTitle({ title, subtitle, onBack }) {
+function PageTitle({ title, onBack }) {
   const handleBack = () => {
     if (onBack) {
       onBack();
@@ -2053,7 +2094,7 @@ function PageTitle({ title, subtitle, onBack }) {
     window.history.back();
   };
 
-  return <div className="page-title"><Button type="button" variant="secondary" className="back-btn" onClick={handleBack} aria-label="Go back">&lt;</Button><div><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div></div>;
+  return <div className="page-title"><Button type="button" variant="secondary" className="back-btn" onClick={handleBack} aria-label="Go back">&lt;</Button><div><h2>{title}</h2></div></div>;
 }
 
 function NewRequest({ currentUser, requests, submitRequest, saveDraftRequest, editingRequestId, setEditingRequestId, departmentsList = [] }) {
@@ -2177,7 +2218,7 @@ function Field({ label, value, onChange, type = 'text', options = [], readOnly =
 }
 
 function RequestList({ title, requests, setPath, allowManage = false, onEditRequest, onWithdrawRequest, onDeleteRequest, currentUser }) {
-  return <section className="page"><PageTitle title={title} subtitle="Track request status, routing, processing, and closure." /><RequestTable requests={requests} setPath={setPath} showActions={allowManage} onEditRequest={onEditRequest} onWithdrawRequest={onWithdrawRequest} onDeleteRequest={onDeleteRequest} currentUser={currentUser} /></section>;
+  return <section className="page requests-page"><PageTitle title={title} subtitle="Track request status, routing, processing, and closure." /><RequestTable requests={requests} setPath={setPath} showActions={allowManage} onEditRequest={onEditRequest} onWithdrawRequest={onWithdrawRequest} onDeleteRequest={onDeleteRequest} currentUser={currentUser} /></section>;
 }
 
 function RequestTable({ title, requests, setPath, showActions = false, onEditRequest, onWithdrawRequest, onDeleteRequest, currentUser }) {
@@ -2313,11 +2354,11 @@ function ApprovalQueue({ currentUser, requests, updateRequestStatus, users, setP
     updateRequestStatus(request.id, 'Rejected', 'Rejected request', remarks, { rejectedBy: currentUser.id, rejectedAt: new Date().toLocaleString(), rejectionReason: remarks });
     setRemarks('');
   };
-  return <section className="page"><PageTitle title="Approval Queue" subtitle="Requests appear only for the assigned approver." />{errors.length > 0 && <AlertList items={errors} />}<Textarea className="remarks-box" placeholder="Remarks required for rejection; optional for approval" value={remarks} onChange={(e) => setRemarks(e.target.value)} /><div className="queue-list">{queue.map((request) => <Card className="queue-card" key={request.id} onClick={() => setPath(`/requests/${request.id}`)}><CardContent><div><h3>{request.documentTitle}</h3><p>{request.requestNo} by {request.requestorName}</p><p>Assigned approver: {request.currentApproverName || users.find((user) => user.id === request.currentApprover)?.name || 'Not assigned'}</p><p>Reminder: bring back or revoke access by {request.borrowReturnDueDate || 'the approved due date'}.</p><Badge variant={getStatusBadgeVariant(request.status)}>{request.status}</Badge></div><div className="actions" onClick={(event) => event.stopPropagation()}><Button onClick={() => approve(request)}>Approve</Button><Button variant="destructive" onClick={() => reject(request)}>Reject</Button></div></CardContent></Card>)}{!queue.length && <Empty message="No approval items." />}</div></section>;
+  return <section className="page approval-page"><PageTitle title="Approval Queue" subtitle="Requests appear only for the assigned approver." />{errors.length > 0 && <AlertList items={errors} />}<Textarea className="remarks-box" placeholder="Remarks required for rejection; optional for approval" value={remarks} onChange={(e) => setRemarks(e.target.value)} /><div className="queue-list">{queue.map((request) => <Card className="queue-card" key={request.id} onClick={() => setPath(`/requests/${request.id}`)}><CardContent><div><h3>{request.documentTitle}</h3><p>{request.requestNo} by {request.requestorName}</p><p>Assigned approver: {request.currentApproverName || users.find((user) => user.id === request.currentApprover)?.name || 'Not assigned'}</p><p>Reminder: bring back or revoke access by {request.borrowReturnDueDate || 'the approved due date'}.</p><Badge variant={getStatusBadgeVariant(request.status)}>{request.status}</Badge></div><div className="actions" onClick={(event) => event.stopPropagation()}><Button onClick={() => approve(request)}>Approve</Button><Button variant="destructive" onClick={() => reject(request)}>Reject</Button></div></CardContent></Card>)}{!queue.length && <Empty message="No approval items." />}</div></section>;
 }
 function ArchivistQueue({ requests, setPath }) {
   const queue = requests.filter((request) => ['Approved', 'Forwarded to Archivist', 'Processing'].includes(request.status));
-  return <section className="page"><PageTitle title="Archivist Queue" subtitle="Retrieve, prepare, release, and monitor approved requests." /><div className="queue-list">{queue.map((request) => <Card className="queue-card" key={request.id}><CardContent><div><h3>{request.documentTitle}</h3><p>{request.requestNo} - {request.documentType}</p><Badge variant={getStatusBadgeVariant(request.status)}>{request.status}</Badge></div><Button onClick={() => setPath(`/archivist/${request.id}/process`)}>Process</Button></CardContent></Card>)}{!queue.length && <Empty message="No requests waiting for processing." />}</div></section>;
+  return <section className="page archivist-page"><PageTitle title="Archivist Queue" subtitle="Retrieve, prepare, release, and monitor approved requests." /><div className="queue-list">{queue.map((request) => <Card className="queue-card" key={request.id}><CardContent><div><h3>{request.documentTitle}</h3><p>{request.requestNo} - {request.documentType}</p><Badge variant={getStatusBadgeVariant(request.status)}>{request.status}</Badge></div><Button onClick={() => setPath(`/archivist/${request.id}/process`)}>Process</Button></CardContent></Card>)}{!queue.length && <Empty message="No requests waiting for processing." />}</div></section>;
 }
 
 function ArchivistProcess({ request, currentUser, processing, setProcessing, updateRequestStatus, setPath }) {
@@ -2413,7 +2454,7 @@ function ClosurePage({ request, currentUser, processing, closures, incidents, se
   return <section className="page"><PageTitle title="Return and Closure" subtitle={request.requestNo} />{errors.length > 0 && <AlertList items={errors} />}<div className="form-grid">{request.documentType === 'Physical' ? <><Field label="Date Returned" type="date" value={form.dateReturned} onChange={(v) => update('dateReturned', v)} /><Field label="Condition Upon Return" type="select" value={form.conditionUponReturn} options={['Complete', 'With Damage', 'With Markings', 'Missing Pages', 'Other']} onChange={(v) => update('conditionUponReturn', v)} /><Field label="Refiled Location" value={form.refiledLocation} onChange={(v) => update('refiledLocation', v)} />{['isComplete', 'hasDamage', 'hasMarkings', 'missingPages'].map((key) => <label className="agreement" key={key}><input type="checkbox" checked={Boolean(form[key])} onChange={(e) => update(key, e.target.checked)} /> {humanize(key)}</label>)}</> : <>{['accessRevoked', 'deletionConfirmed'].map((key) => <label className="agreement" key={key}><input type="checkbox" checked={Boolean(form[key])} onChange={(e) => update(key, e.target.checked)} /> {humanize(key)}</label>)}<Field label="Validated By" value={currentUser.name} readOnly /><Field label="Validation Date" type="date" value={form.validationDate} onChange={(v) => update('validationDate', v)} /></>}<Field className="wide" label="Closure Remarks" type="textarea" value={form.closureRemarks} onChange={(v) => update('closureRemarks', v)} /></div>{request.documentType === 'Physical' && hasIssue && <div className="ui-alert">Return issues will create an incident report instead of closing automatically.</div>}<Button onClick={close}>Evaluate Closure</Button></section>;
 }
 function Incidents({ incidents, requests, setPath }) {
-  return <section className="page"><PageTitle title="Incident Reports" subtitle="Lost, missing, damaged, altered, overdue, or improperly handled records." /><div className="toolbar-row"><span className="helper-text">Incident handling is required for damage, missing pages, unauthorized sharing, overdue returns, and unrecalled access.</span><Button variant="secondary" type="button" onClick={() => setPath('/incidents/new')}>Create Incident</Button></div><IncidentTable incidents={incidents} requests={requests} setPath={setPath} /></section>;
+  return <section className="page incidents-page"><PageTitle title="Incident Reports" subtitle="Lost, missing, damaged, altered, overdue, or improperly handled records." /><div className="toolbar-row"><span className="helper-text">Incident handling is required for damage, missing pages, unauthorized sharing, overdue returns, and unrecalled access.</span><Button variant="secondary" type="button" onClick={() => setPath('/incidents/new')}>Create Incident</Button></div><IncidentTable incidents={incidents} requests={requests} setPath={setPath} /></section>;
 }
 
 function NewIncident({ requests, currentUser, setIncidents, updateRequestStatus, setPath }) {
@@ -2511,13 +2552,40 @@ function Users({ users, setUsers, currentUserId, currentUser, branchesList, depa
   const [showEditPassword, setShowEditPassword] = useState(false);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
-  const [isReassigningProfiles, setIsReassigningProfiles] = useState(false);
   const [notice, setNotice] = useState('');
   const [errors, setErrors] = useState([]);
 
   useEffect(() => {
     setUserList(users);
   }, [users]);
+
+  const reloadUsersFromSupabase = useCallback(async () => {
+    if (normalizeRole(currentUser?.role) !== 'superadmin') return false;
+    if (!supabaseConfig.isConfigured || !supabase) return false;
+
+    const { data, error } = await loadAdminDashboardData();
+    if (error || !Array.isArray(data?.users)) return false;
+
+    const nextUsers = normalizeLoadedUsers(data.users);
+    setUserList(nextUsers);
+    setUsers(nextUsers);
+    return true;
+  }, [currentUser?.role, setUsers]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshAllUsers = async () => {
+      if (cancelled) return;
+      await reloadUsersFromSupabase();
+    };
+
+    void refreshAllUsers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadUsersFromSupabase]);
 
   useEffect(() => {
     if (!branchOptions.length && !departmentOptions.length) return;
@@ -2550,27 +2618,6 @@ function Users({ users, setUsers, currentUserId, currentUser, branchesList, depa
     setDraft({});
     setShowEditPassword(false);
     setErrors([]);
-  };
-
-  const reassignAllProfiles = async () => {
-    const confirmed = window.confirm('Reassign every non-superadmin profile to your super admin account?');
-    if (!confirmed) return;
-
-    setErrors([]);
-    setNotice('');
-    setIsReassigningProfiles(true);
-    try {
-      const { data, error } = await reassignProfilesToSuperAdmin();
-      if (error) {
-        setErrors([readErrorMessage(error, 'Failed to reassign profiles.')]);
-        return;
-      }
-
-      const updatedCount = Number(data?.updatedCount ?? 0);
-      setNotice(`Updated ${updatedCount} profile${updatedCount === 1 ? '' : 's'} to use your super admin account as creator.`);
-    } finally {
-      setIsReassigningProfiles(false);
-    }
   };
 
   const saveEdit = async () => {
@@ -2771,6 +2818,8 @@ function Users({ users, setUsers, currentUserId, currentUser, branchesList, depa
             createdByName: data.profile.createdByName || data.profile.created_by_name || next.createdByName,
           };
         }
+
+        await reloadUsersFromSupabase();
       }
 
       setUsers((items) => {
@@ -2807,6 +2856,9 @@ function Users({ users, setUsers, currentUserId, currentUser, branchesList, depa
   return (
     <section className="page users-page">
       <PageTitle title="User Management" subtitle={`Admin view of users, roles, branches, departments, and active status. ${supabaseConfig.isConfigured ? 'Supabase sync on.' : 'Supabase sync off.'} All profiles from the database are shown here.`} />
+      <div className="toolbar-row">
+        <span className="helper-text">Showing {userList.length} system account{userList.length === 1 ? '' : 's'} from Supabase.</span>
+      </div>
       {errors.length > 0 && <AlertList items={errors} />}
       {notice && <div className="ui-alert">{notice}</div>}
       <div className="table-card add-user-card">
@@ -2814,9 +2866,6 @@ function Users({ users, setUsers, currentUserId, currentUser, branchesList, depa
         <p className="helper-text">Only super admins can create accounts here. Click the button to open the account form.</p>
         <div className="actions" style={{ gap: '0.75rem', flexWrap: 'wrap' }}>
           <Button className="create-user-button" type="button" onClick={() => setIsCreateUserModalOpen(true)}>Create User</Button>
-          <Button variant="secondary" type="button" onClick={() => { void reassignAllProfiles(); }} disabled={isReassigningProfiles}>
-            {isReassigningProfiles ? 'Reassigning...' : 'Assign All Profiles to My Account'}
-          </Button>
         </div>
       </div>
       <div className="table-card">
@@ -3067,10 +3116,21 @@ const systemProcessSteps = [
 
 function Settings({ theme, setTheme, initialSettings, onSettingsChange, onSave }) {
   const [branchesList, setBranchesList] = useState(() => {
-    return Array.isArray(initialSettings?.branches) ? initialSettings.branches.map(normalizeBranchName) : [];
+    const next = Array.isArray(initialSettings?.branches) && initialSettings.branches.length
+      ? initialSettings.branches
+      : branches;
+    return next.map(normalizeBranchName);
   });
-  const [departmentsList, setDepartmentsList] = useState(() => initialSettings?.departments || []);
-  const [categoriesList, setCategoriesList] = useState(() => initialSettings?.categories || []);
+  const [departmentsList, setDepartmentsList] = useState(() => {
+    return Array.isArray(initialSettings?.departments) && initialSettings.departments.length
+      ? initialSettings.departments
+      : departments;
+  });
+  const [categoriesList, setCategoriesList] = useState(() => {
+    return Array.isArray(initialSettings?.categories) && initialSettings.categories.length
+      ? initialSettings.categories
+      : documentCategories;
+  });
   const [editingItem, setEditingItem] = useState(null);
   const [draftValue, setDraftValue] = useState('');
   const [notice, setNotice] = useState('');
@@ -3080,9 +3140,15 @@ function Settings({ theme, setTheme, initialSettings, onSettingsChange, onSave }
   const [isPolicyReferenceOpen, setIsPolicyReferenceOpen] = useState(false);
 
   useEffect(() => {
-    const nextBranches = Array.isArray(initialSettings?.branches) ? initialSettings.branches.map(normalizeBranchName) : [];
-    const nextDepartments = Array.isArray(initialSettings?.departments) ? initialSettings.departments : [];
-    const nextCategories = Array.isArray(initialSettings?.categories) ? initialSettings.categories : [];
+    const nextBranches = Array.isArray(initialSettings?.branches) && initialSettings.branches.length
+      ? initialSettings.branches.map(normalizeBranchName)
+      : branches.map(normalizeBranchName);
+    const nextDepartments = Array.isArray(initialSettings?.departments) && initialSettings.departments.length
+      ? initialSettings.departments
+      : departments;
+    const nextCategories = Array.isArray(initialSettings?.categories) && initialSettings.categories.length
+      ? initialSettings.categories
+      : documentCategories;
     setBranchesList(nextBranches);
     setDepartmentsList(nextDepartments);
     setCategoriesList(nextCategories);
@@ -3235,44 +3301,65 @@ function Settings({ theme, setTheme, initialSettings, onSettingsChange, onSave }
 }
 
 function EditableListCard({ title, items, section, editingItem, draftValue, onStartEdit, onSaveEdit, onDelete, onAdd, onDraftChange, onCancel, addingSection, newItemValue, onNewItemChange, onSaveNewItem, onCancelNewItem }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const visibleItems = items || [];
+
+  const handleStartEdit = (itemIndex, value) => {
+    onStartEdit(section, itemIndex, value);
+  };
+
   return (
     <article className="info-card">
-      <div className="card-header">
-        <h3>{title}</h3>
-        <Button className="secondary" type="button" onClick={() => onAdd(section)}>+ Add</Button>
-      </div>
-      {addingSection === section && (
-        <div className="add-inline-form">
-          <Input value={newItemValue} onChange={(event) => onNewItemChange(event.target.value)} placeholder={`New ${title}`} />
-          <div className="action-group">
-            <Button className="secondary" type="button" onClick={onSaveNewItem}>Save</Button>
-            <Button variant="ghost" type="button" onClick={onCancelNewItem}>Cancel</Button>
-          </div>
+      <button
+        type="button"
+        className="card-header settings-dropdown-header"
+        onClick={() => setIsOpen((current) => !current)}
+        aria-expanded={isOpen}
+      >
+        <div>
+          <h3>{title}</h3>
+          <span className="helper-text">{items.length} item{items.length === 1 ? '' : 's'}</span>
         </div>
+        <span className="settings-dropdown-label">{isOpen ? 'Hide all' : 'Show all'}</span>
+      </button>
+      {isOpen && (
+        <>
+          <div className="add-inline-form">
+            <Button className="secondary" type="button" onClick={() => onAdd(section)}>+ Add</Button>
+            {addingSection === section && (
+              <>
+                <Input value={newItemValue} onChange={(event) => onNewItemChange(event.target.value)} placeholder={`New ${title}`} />
+                <Button className="secondary" type="button" onClick={onSaveNewItem}>Save</Button>
+                <Button variant="ghost" type="button" onClick={onCancelNewItem}>Cancel</Button>
+              </>
+            )}
+          </div>
+          <div className="stacked-list settings-scroll-list">
+            {visibleItems.map((item, index) => {
+              const isEditing = editingItem?.section === section && editingItem.index === index;
+              return (
+                <div className="list-item" key={`${section}-${index}`} onClick={() => !isEditing && handleStartEdit(index, item)}>
+                  {isEditing ? <Input value={draftValue} onChange={(event) => onDraftChange(event.target.value)} /> : <span>{item}</span>}
+                  <div className="action-group" onClick={(event) => event.stopPropagation()}>
+                    {isEditing ? (
+                      <>
+                        <Button className="secondary" type="button" onClick={onSaveEdit}>Save</Button>
+                        <Button variant="ghost" type="button" onClick={onCancel}>Cancel</Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button className="secondary" type="button" onClick={() => handleStartEdit(index, item)}>Edit</Button>
+                        <Button variant="destructive" type="button" onClick={() => onDelete(section, index)}>Delete</Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {!visibleItems.length && <div className="settings-empty">No {title.toLowerCase()} yet.</div>}
+          </div>
+        </>
       )}
-      <div className="stacked-list">
-        {items.map((item, index) => {
-          const isEditing = editingItem?.section === section && editingItem.index === index;
-          return (
-            <div className="list-item" key={`${section}-${index}`} onClick={() => !isEditing && onStartEdit(section, index, item)}>
-              {isEditing ? <Input value={draftValue} onChange={(event) => onDraftChange(event.target.value)} /> : <span>{item}</span>}
-              <div className="action-group" onClick={(event) => event.stopPropagation()}>
-                {isEditing ? (
-                  <>
-                    <Button className="secondary" type="button" onClick={onSaveEdit}>Save</Button>
-                    <Button variant="ghost" type="button" onClick={onCancel}>Cancel</Button>
-                  </>
-                ) : (
-                  <>
-                    <Button className="secondary" type="button" onClick={() => onStartEdit(section, index, item)}>Edit</Button>
-                    <Button variant="destructive" type="button" onClick={() => onDelete(section, index)}>Delete</Button>
-                  </>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
     </article>
   );
 }
@@ -3282,7 +3369,7 @@ function AuditTrailTable({ logs, users, setPath }) {
 }
 
 function AuditLogsPage({ logs, users, requests, setPath }) {
-  return <section className="page"><PageTitle title="Audit Logs" subtitle="Admin-only monitoring for every important request status change and action." /><Card className="table-card"><Table><TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Request</TableHead><TableHead>User</TableHead><TableHead>Action</TableHead><TableHead>Old Status</TableHead><TableHead>New Status</TableHead><TableHead>Remarks</TableHead></TableRow></TableHeader><TableBody>{logs.map((log) => <TableRow key={log.id} onClick={() => setPath(`/requests/${log.requestId}`)}><TableCell>{log.createdAt}</TableCell><TableCell>{requests.find((request) => request.id === log.requestId)?.requestNo || '-'}</TableCell><TableCell>{users.find((user) => user.id === log.userId)?.name || '-'}</TableCell><TableCell>{log.action}</TableCell><TableCell>{log.oldStatus}</TableCell><TableCell>{log.newStatus}</TableCell><TableCell>{log.remarks}</TableCell></TableRow>)}{!logs.length && <TableRow><TableCell className="empty" colSpan="7">No audit logs yet.</TableCell></TableRow>}</TableBody></Table></Card></section>;
+  return <section className="page audit-logs-page"><PageTitle title="Audit Logs" subtitle="Admin-only monitoring for every important request status change and action." /><Card className="table-card"><Table><TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Request</TableHead><TableHead>User</TableHead><TableHead>Action</TableHead><TableHead>Old Status</TableHead><TableHead>New Status</TableHead><TableHead>Remarks</TableHead></TableRow></TableHeader><TableBody>{logs.map((log) => <TableRow key={log.id} onClick={() => setPath(`/requests/${log.requestId}`)}><TableCell>{log.createdAt}</TableCell><TableCell>{requests.find((request) => request.id === log.requestId)?.requestNo || '-'}</TableCell><TableCell>{users.find((user) => user.id === log.userId)?.name || '-'}</TableCell><TableCell>{log.action}</TableCell><TableCell>{log.oldStatus}</TableCell><TableCell>{log.newStatus}</TableCell><TableCell>{log.remarks}</TableCell></TableRow>)}{!logs.length && <TableRow><TableCell className="empty" colSpan="7">No audit logs yet.</TableCell></TableRow>}</TableBody></Table></Card></section>;
 }
 
 function Empty({ message }) {
