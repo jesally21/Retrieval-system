@@ -95,6 +95,29 @@ function getCallerClient(req) {
   });
 }
 
+async function findAuthUserByEmail(adminClient, email) {
+  const targetEmail = String(email || '').trim().toLowerCase();
+  if (!targetEmail) return null;
+
+  const pageSize = 100;
+  for (let page = 1; page <= 20; page += 1) {
+    const { data, error } = await adminClient.auth.admin.listUsers({
+      page,
+      perPage: pageSize,
+    });
+
+    if (error) throw error;
+
+    const users = Array.isArray(data?.users) ? data.users : [];
+    const match = users.find((user) => String(user?.email || '').trim().toLowerCase() === targetEmail);
+    if (match) return match;
+
+    if (users.length < pageSize) break;
+  }
+
+  return null;
+}
+
 async function requireSuperAdmin(req) {
   const callerClient = getCallerClient(req);
   const { data: userData, error: userError } = await callerClient.auth.getUser(req.headers.authorization || undefined);
@@ -196,17 +219,23 @@ module.exports = async function handler(req, res) {
       }
 
       const role = normalizeRole(profile?.role);
+      const branch = String(profile?.branch || '');
+      const department = String(profile?.department || '');
+      const position = String(profile?.position || '');
       const metadata = {
         full_name: fullName,
-        branch: String(profile?.branch || ''),
-        department: String(profile?.department || ''),
-        position: String(profile?.position || ''),
+        branch,
+        department,
+        position,
         role,
         status: 'Active',
         avatar_url: profile?.avatar_url || null,
       };
 
-      const { data: created, error: createError } = await adminClient.auth.admin.createUser({
+      let authUser = null;
+      let createError = null;
+
+      const { data: created, error } = await adminClient.auth.admin.createUser({
         email,
         password,
         email_confirm: true,
@@ -214,20 +243,44 @@ module.exports = async function handler(req, res) {
         app_metadata: { role },
       });
 
-      if (createError || !created?.user) {
-        return json(res, 400, { error: createError?.message || 'Failed to create auth user.' });
+      authUser = created?.user || null;
+      createError = error || null;
+
+      if (!authUser && createError) {
+        const duplicateMessage = String(createError.message || '').toLowerCase();
+        const isAlreadyRegistered = /already registered|user already exists|duplicate key|email.*exists/i.test(duplicateMessage);
+
+        if (isAlreadyRegistered) {
+          authUser = await findAuthUserByEmail(adminClient, email);
+          if (!authUser) {
+            return json(res, 400, { error: 'This user is already registered, but the auth record could not be found.' });
+          }
+
+          const { error: updateError } = await adminClient.auth.admin.updateUserById(authUser.id, {
+            password,
+            email_confirm: true,
+            user_metadata: metadata,
+            app_metadata: { role },
+          });
+
+          if (updateError) {
+            return json(res, 400, { error: updateError.message || 'The user already exists, but the account could not be updated.' });
+          }
+        } else {
+          return json(res, 400, { error: createError.message || 'Failed to create auth user.' });
+        }
       }
 
       const { data: syncedProfile, error: profileError } = await adminClient
         .from('profiles')
         .upsert({
-          id: created.user.id,
+          id: authUser.id,
           full_name: fullName,
           email,
           avatar_url: profile?.avatar_url || null,
-          branch: String(profile?.branch || ''),
-          department: String(profile?.department || ''),
-          position: String(profile?.position || ''),
+          branch,
+          department,
+          position,
           role,
           status: 'Active',
           is_active: true,
@@ -241,7 +294,7 @@ module.exports = async function handler(req, res) {
         return json(res, 400, { error: profileError.message || 'User created, but profile sync failed.' });
       }
 
-      return json(res, 200, { user: created.user, profile: syncedProfile });
+      return json(res, 200, { user: authUser, profile: syncedProfile, duplicateHandled: Boolean(createError) });
     }
 
     if (action === 'load-dashboard-data') {

@@ -118,14 +118,19 @@ function normalizeLoadedSettings(settings = {}) {
 }
 
 function normalizeLoadedUsers(users = []) {
-  return Array.isArray(users) ? users.map((user) => ({
-    ...user,
-    password: undefined,
-    status: user.status || (user.is_active === false ? 'Inactive' : 'Active'),
-    createdAt: user.createdAt || user.created_at || '',
-    createdBy: user.createdBy || user.created_by || '',
-    createdByName: user.createdByName || user.created_by_name || '',
-  })) : [];
+  return Array.isArray(users) ? users.map((user) => {
+    const name = user.name || user.full_name || user.fullName || user.email || 'User';
+    return {
+      ...user,
+      name,
+      password: undefined,
+      status: user.status || (user.is_active === false ? 'Inactive' : 'Active'),
+      createdAt: user.createdAt || user.created_at || '',
+      createdBy: user.createdBy || user.created_by || '',
+      createdByName: user.createdByName || user.created_by_name || '',
+      avatar: user.avatar || user.avatar_url || getAvatarUrl(name),
+    };
+  }) : [];
 }
 
 function mapAuthUserToProfile(user) {
@@ -369,7 +374,7 @@ function resolveLocalRequestApprover(currentUser, users = [], branch = '', confi
   }
 
   if (targetRole === 'branch_head') {
-    return findUser('branch_head', normalizedBranch);
+    return findUser('branch_head', normalizedBranch) || findUser('department_head') || findUser('superadmin') || findUser('ceo');
   }
 
   if (targetRole === 'dpo') {
@@ -384,7 +389,7 @@ function resolveLocalRequestApprover(currentUser, users = [], branch = '', confi
     return findUser('superadmin') || findUser('ceo');
   }
 
-  return findUser('department_head') || findUser('superadmin');
+  return findUser('department_head') || findUser('superadmin') || findUser('ceo');
 }
 
 function getRequestorRole(request, users = []) {
@@ -421,7 +426,8 @@ function canManageRequestFromList(user, request) {
 async function loadDashboardState(profile) {
   if (normalizeRole(profile?.role) === 'superadmin' && supabaseConfig.isConfigured && supabase) {
     const { data, error } = await loadAdminDashboardData();
-    if (!error && data) {
+    const hasUsers = Array.isArray(data?.users) && data.users.length > 0;
+    if (!error && data && hasUsers) {
       return data;
     }
     if (error) {
@@ -429,6 +435,8 @@ async function loadDashboardState(profile) {
       if (!/failed to fetch/i.test(message)) {
         console.error('Super admin dashboard load failed:', message);
       }
+    } else if (data && !hasUsers) {
+      console.warn('Super admin dashboard load returned no users; falling back to direct Supabase load.');
     }
   }
   return loadSupabaseAppData().catch(() => null);
@@ -439,12 +447,34 @@ function getInjectedTestSessionProfile() {
   return window.__TEST_SESSION_PROFILE__ || null;
 }
 
+function readSavedTheme() {
+  if (typeof window === 'undefined') return 'light';
+  const savedTheme = window.localStorage.getItem('bmpc-theme');
+  return savedTheme === 'dark' ? 'dark' : 'light';
+}
+
+function readSavedPath() {
+  if (typeof window === 'undefined') return '/dashboard';
+  return window.localStorage.getItem('bmpc-path') || '/dashboard';
+}
+
+function readSavedSessionProfile() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem('bmpc-session-profile');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 function App() {
   const injectedTestSessionProfile = getInjectedTestSessionProfile();
+  const savedSessionProfile = readSavedSessionProfile();
   const [users, setUsers] = useState([]);
-  const [currentUserId, setCurrentUserId] = useState(() => injectedTestSessionProfile?.id || '');
-  const [path, setPathState] = useState('/dashboard');
-  const [theme, setTheme] = useState('dark');
+  const [currentUserId, setCurrentUserId] = useState(() => injectedTestSessionProfile?.id || savedSessionProfile?.id || '');
+  const [path, setPathState] = useState(() => readSavedPath());
+  const [theme, setTheme] = useState(() => readSavedTheme());
   const [editingRequestId, setEditingRequestId] = useState(null);
   const [requestDetailOverride, setRequestDetailOverride] = useState(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -456,9 +486,8 @@ function App() {
   const [settingsSnapshot, setSettingsSnapshot] = useState({ branches: [], departments: [], categories: [] });
   const [incidents, setIncidents] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
-  const [authReady, setAuthReady] = useState(() => Boolean(injectedTestSessionProfile));
   const [isHydrated, setIsHydrated] = useState(false);
-  const [sessionProfile, setSessionProfile] = useState(() => injectedTestSessionProfile);
+  const [sessionProfile, setSessionProfile] = useState(() => injectedTestSessionProfile || savedSessionProfile);
   const [loadDiagnostics, setLoadDiagnostics] = useState({ loadErrors: [], counts: {} });
   const manualLogoutRef = useRef(false);
   const currentUser = users.find((user) => user.id === currentUserId) || sessionProfile || null;
@@ -477,6 +506,9 @@ function App() {
         pathHistoryRef.current = pathHistoryRef.current.filter((item) => item !== resolvedPath);
       } else {
         pathHistoryRef.current = [...pathHistoryRef.current, currentPath].slice(-25);
+      }
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('bmpc-path', resolvedPath);
       }
       return resolvedPath;
     });
@@ -497,6 +529,20 @@ function App() {
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [path]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('bmpc-path', path);
+  }, [path]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (sessionProfile?.id && currentUserId === sessionProfile.id) {
+      window.localStorage.setItem('bmpc-session-profile', JSON.stringify(sessionProfile));
+    } else if (!sessionProfile && !currentUserId) {
+      window.localStorage.removeItem('bmpc-session-profile');
+    }
+  }, [sessionProfile, currentUserId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -521,7 +567,6 @@ function App() {
         counts: data?.diagnostics?.counts || {},
       });
       setIsHydrated(true);
-      setAuthReady(true);
     };
 
     const init = async () => {
@@ -533,12 +578,10 @@ function App() {
           const filtered = items.filter((item) => item.id !== profile.id);
           return [profile, ...filtered];
         });
-        setAuthReady(true);
         setIsHydrated(true);
         return;
       }
       if (!supabase) {
-        setAuthReady(true);
         setIsHydrated(true);
         return;
       }
@@ -557,7 +600,6 @@ function App() {
         });
       }
       if (!user?.id) {
-        setAuthReady(true);
         setIsHydrated(true);
         return;
       }
@@ -677,7 +719,6 @@ function App() {
         setAuditLogs([]);
         setSettingsSnapshot({ branches: [], departments: [], categories: [] });
         setLoadDiagnostics({ loadErrors: [], counts: {} });
-        setAuthReady(true);
         setIsHydrated(true);
       });
       subscription = data.subscription;
@@ -720,6 +761,9 @@ function App() {
   useEffect(() => {
     document.body.classList.toggle('dark', theme === 'dark');
     document.body.classList.toggle('light', theme === 'light');
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('bmpc-theme', theme);
+    }
     window.__setAppPath = setPath;
     window.__goBackAppPath = goBack;
     return () => {
@@ -771,7 +815,7 @@ function App() {
     if (requestId) {
       const nextApprover = resolveLocalRequestApprover(currentUser, users, resolveRequestBranch(currentUser, form.branch), form.confidentialityLevel);
       if (!nextApprover && normalizeRole(currentUser?.role) === 'requestor') {
-        return [`No Branch Head available for ${resolveRequestBranch(currentUser, form.branch) || 'this branch'}.`];
+        return [`No approver available for ${resolveRequestBranch(currentUser, form.branch) || 'this branch'}.`];
       }
       const nextItem = target ? {
         ...target,
@@ -827,7 +871,7 @@ function App() {
     };
     const nextApprover = resolveLocalRequestApprover(currentUser, users, next.branch, next.confidentialityLevel);
     if (!nextApprover && normalizeRole(currentUser?.role) === 'requestor') {
-      return [`No Branch Head available for ${next.branch || 'this branch'}.`];
+      return [`No approver available for ${next.branch || 'this branch'}.`];
     }
     next.currentApprover = nextApprover?.id || '';
     next.currentApproverName = nextApprover?.name || '';
@@ -931,12 +975,14 @@ function App() {
   const deleteOwnRequest = async (requestId) => {
     const target = requests.find((item) => item.id === requestId);
     if (!target || target.requestorId !== currentUser.id) return;
-    if (supabaseConfig.isConfigured && supabase) {
-      const { error } = await deleteRequestRecord(requestId);
-      if (error) {
-        console.error('Failed to delete request:', error);
-        return;
-      }
+    if (!supabaseConfig.isConfigured || !supabase) {
+      console.error('Failed to delete request: Supabase is not configured.');
+      return;
+    }
+    const { error } = await deleteRequestRecord(requestId);
+    if (error) {
+      console.error('Failed to delete request:', error);
+      return;
     }
     setRequests((items) => items.filter((item) => item.id !== requestId));
     setProcessing((records) => Object.fromEntries(Object.entries(records).filter(([id]) => id !== requestId)));
@@ -1001,55 +1047,33 @@ function App() {
       ...(canEditSensitiveProfileFields ? { current_password: currentPassword, new_password: newPassword } : {}),
     };
 
-    if (supabaseConfig.isConfigured && supabase) {
-      const { data, error } = await updateOwnProfile({
-        userId: currentUser.id,
-        profile: nextProfile,
-      });
-      if (error) return { errors: [readErrorMessage(error, 'Update profile failed.')] };
-
-      const updatedProfile = data?.profile;
-      const refreshedAvatar = updatedProfile?.avatar_url || (updatedProfile?.full_name ? getAvatarUrl(updatedProfile.full_name) : avatar);
-      setUsers((items) => items.map((user) => {
-        if (user.id !== currentUser.id) return user;
-        return {
-          ...user,
-          name: updatedProfile?.full_name || name,
-          email: updatedProfile?.email || email,
-          avatar: refreshedAvatar,
-          avatarCustom: Boolean(updatedProfile?.avatar_url),
-        };
-      }));
-
-      return {
-        errors: [],
-        successMessage: data?.passwordChanged
-          ? 'Profile updated. Please sign in again with your new password.'
-          : 'Profile updated successfully.',
-        requiresRelogin: Boolean(data?.passwordChanged),
-      };
+    if (!supabaseConfig.isConfigured || !supabase) {
+      return { errors: ['Supabase is not configured.'] };
     }
+    const { data, error } = await updateOwnProfile({
+      userId: currentUser.id,
+      profile: nextProfile,
+    });
+    if (error) return { errors: [readErrorMessage(error, 'Update profile failed.')] };
 
+    const updatedProfile = data?.profile;
+    const refreshedAvatar = updatedProfile?.avatar_url || (updatedProfile?.full_name ? getAvatarUrl(updatedProfile.full_name) : avatar);
     setUsers((items) => items.map((user) => {
       if (user.id !== currentUser.id) return user;
       return {
         ...user,
-        name,
-        email,
-        avatar,
-        avatarCustom: Boolean(patch.avatarCustom),
+        name: updatedProfile?.full_name || name,
+        email: updatedProfile?.email || email,
+        avatar: refreshedAvatar,
+        avatarCustom: Boolean(updatedProfile?.avatar_url),
       };
     }));
-    setSessionProfile((profile) => profile && profile.id === currentUser.id ? {
-      ...profile,
-      name,
-      email,
-      avatar,
-    } : profile);
     return {
       errors: [],
-      successMessage: 'Profile updated successfully.',
-      requiresRelogin: false,
+      successMessage: data?.passwordChanged
+        ? 'Profile updated. Please sign in again with your new password.'
+        : 'Profile updated successfully.',
+      requiresRelogin: Boolean(data?.passwordChanged),
     };
   };
 
@@ -1103,7 +1127,7 @@ function App() {
     };
   }, [allowedPath, currentUser, requests, routeRequestId, routeSection]);
 
-  if (!authReady || !currentUser || path === '/login') {
+  if (!currentUser || path === '/login') {
     return (
       <Login
         isConfigured={supabaseConfig.isConfigured}
@@ -1128,7 +1152,6 @@ function App() {
               return items.some((item) => item.id === nextUser.id) ? items.map((item) => (item.id === nextUser.id ? { ...item, ...nextUser } : item)) : [nextUser, ...items];
             });
           }
-          setAuthReady(true);
           setIsHydrated(true);
           setPath('/dashboard', { replace: true });
           return [];
@@ -1150,7 +1173,7 @@ function App() {
             <div>{visibleLoadWarnings.join(' ')}</div>
           </div>
         )}
-        <Header user={currentUser} onLogout={async () => { manualLogoutRef.current = true; await supabaseSignOut(); setCurrentUserId(''); setSessionProfile(null); setPath('/login', { replace: true }); }} onUpdateProfile={updateCurrentUserProfile} theme={theme} setTheme={setTheme} isMobileMenuOpen={isMobileMenuOpen} onMenuToggle={() => setIsMobileMenuOpen((isOpen) => !isOpen)} />
+        <Header user={currentUser} onLogout={async () => { manualLogoutRef.current = true; await supabaseSignOut(); setCurrentUserId(''); setSessionProfile(null); if (typeof window !== 'undefined') { window.localStorage.removeItem('bmpc-session-profile'); } setPath('/login', { replace: true }); }} onUpdateProfile={updateCurrentUserProfile} theme={theme} setTheme={setTheme} isMobileMenuOpen={isMobileMenuOpen} onMenuToggle={() => setIsMobileMenuOpen((isOpen) => !isOpen)} />
         {!allowedPath && <RoleDenied setPath={setPath} />}
         {allowedPath && path === '/dashboard' && <Dashboard {...pageProps} />}
         {allowedPath && path === '/requests/new' && <NewRequest {...pageProps} editingRequestId={editingRequestId} setEditingRequestId={setEditingRequestId} saveDraftRequest={saveDraftRequest} />}
@@ -2542,7 +2565,6 @@ function Users({ users, setUsers, currentUserId, currentUser, branchesList, depa
   ].filter(Boolean))], [departmentsList]);
   const defaultBranch = branchOptions[0] || branches[0] || '';
   const defaultDepartment = departmentOptions[0] || departments[0] || '';
-  const [userList, setUserList] = useState(users);
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState({});
   const [newUser, setNewUser] = useState({ fullName: '', email: '', password: '', confirmPassword: '', role: 'requestor', branch: defaultBranch, department: defaultDepartment });
@@ -2552,13 +2574,8 @@ function Users({ users, setUsers, currentUserId, currentUser, branchesList, depa
   const [showEditPassword, setShowEditPassword] = useState(false);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
-  const [notice, setNotice] = useState('');
+  const [notice] = useState('');
   const [errors, setErrors] = useState([]);
-
-  useEffect(() => {
-    setUserList(users);
-  }, [users]);
-
   const reloadUsersFromSupabase = useCallback(async () => {
     if (normalizeRole(currentUser?.role) !== 'superadmin') return false;
     if (!supabaseConfig.isConfigured || !supabase) return false;
@@ -2567,7 +2584,6 @@ function Users({ users, setUsers, currentUserId, currentUser, branchesList, depa
     if (error || !Array.isArray(data?.users)) return false;
 
     const nextUsers = normalizeLoadedUsers(data.users);
-    setUserList(nextUsers);
     setUsers(nextUsers);
     return true;
   }, [currentUser?.role, setUsers]);
@@ -2839,12 +2855,14 @@ function Users({ users, setUsers, currentUserId, currentUser, branchesList, depa
 
   const deleteUser = async (id) => {
     if (id === currentUserId) return;
-    if (supabaseConfig.isConfigured && supabase) {
-      const { error } = await deleteUserAccount({ userId: id });
-      if (error) {
-        setErrors([readErrorMessage(error, 'Delete user failed.')]);
-        return;
-      }
+    if (!supabaseConfig.isConfigured || !supabase) {
+      setErrors(['Supabase is not configured.']);
+      return;
+    }
+    const { error } = await deleteUserAccount({ userId: id });
+    if (error) {
+      setErrors([readErrorMessage(error, 'Delete user failed.')]);
+      return;
     }
     setUsers((items) => items.filter((item) => item.id !== id));
     if (editingId === id) {
@@ -2857,7 +2875,7 @@ function Users({ users, setUsers, currentUserId, currentUser, branchesList, depa
     <section className="page users-page">
       <PageTitle title="User Management" subtitle={`Admin view of users, roles, branches, departments, and active status. ${supabaseConfig.isConfigured ? 'Supabase sync on.' : 'Supabase sync off.'} All profiles from the database are shown here.`} />
       <div className="toolbar-row">
-        <span className="helper-text">Showing {userList.length} system account{userList.length === 1 ? '' : 's'} from Supabase.</span>
+        <span className="helper-text">Showing {users.length} system account{users.length === 1 ? '' : 's'} from Supabase.</span>
       </div>
       {errors.length > 0 && <AlertList items={errors} />}
       {notice && <div className="ui-alert">{notice}</div>}
@@ -2883,7 +2901,7 @@ function Users({ users, setUsers, currentUserId, currentUser, branchesList, depa
             </TableRow>
           </TableHeader>
           <TableBody>
-            {userList.map((user) => {
+            {users.map((user) => {
               return (
                 <TableRow key={user.id}>
                   <TableCell>
@@ -3181,12 +3199,13 @@ function Settings({ theme, setTheme, initialSettings, onSettingsChange, onSave }
       departments: departmentsList.map((item, index) => (editingItem.section === 'departments' && index === editingItem.index ? value : item)),
       categories: categoriesList.map((item, index) => (editingItem.section === 'categories' && index === editingItem.index ? value : item)),
     };
+    const saved = await syncSettings(nextSettings, 'Changes saved in Supabase.');
+    if (!saved) return;
     if (editingItem.section === 'branches') setBranchesList(nextSettings.branches);
     if (editingItem.section === 'departments') setDepartmentsList(nextSettings.departments);
     if (editingItem.section === 'categories') setCategoriesList(nextSettings.categories);
     setEditingItem(null);
     setDraftValue('');
-    await syncSettings(nextSettings, 'Changes saved in Supabase.');
   };
 
   const deleteItem = async (section, index) => {
@@ -3195,10 +3214,11 @@ function Settings({ theme, setTheme, initialSettings, onSettingsChange, onSave }
       departments: departmentsList.filter((_, itemIndex) => !(section === 'departments' && itemIndex === index)),
       categories: categoriesList.filter((_, itemIndex) => !(section === 'categories' && itemIndex === index)),
     };
+    const saved = await syncSettings(nextSettings, 'Item removed and saved in Supabase.');
+    if (!saved) return;
     setBranchesList(nextSettings.branches);
     setDepartmentsList(nextSettings.departments);
     setCategoriesList(nextSettings.categories);
-    await syncSettings(nextSettings, 'Item removed and saved in Supabase.');
   };
 
   const addItem = (section) => {
@@ -3217,12 +3237,13 @@ function Settings({ theme, setTheme, initialSettings, onSettingsChange, onSave }
       departments: addingSection === 'departments' ? [...departmentsList, value] : departmentsList,
       categories: addingSection === 'categories' ? [...categoriesList, value] : categoriesList,
     };
+    const saved = await syncSettings(nextSettings, 'New item added and saved in Supabase.');
+    if (!saved) return;
     setBranchesList(nextSettings.branches);
     setDepartmentsList(nextSettings.departments);
     setCategoriesList(nextSettings.categories);
     setAddingSection(null);
     setNewItemValue('');
-    await syncSettings(nextSettings, 'New item added and saved in Supabase.');
   };
 
   const cancelNewItem = () => {
@@ -3232,10 +3253,11 @@ function Settings({ theme, setTheme, initialSettings, onSettingsChange, onSave }
   };
 
   const saveChanges = async () => {
+    const nextSettings = { branches: branchesList, departments: departmentsList, categories: categoriesList };
+    const saved = await syncSettings(nextSettings, 'Changes saved in Supabase.');
+    if (!saved) return;
     setEditingItem(null);
     setDraftValue('');
-    const nextSettings = { branches: branchesList, departments: departmentsList, categories: categoriesList };
-    await syncSettings(nextSettings, 'Changes saved in Supabase.');
   };
 
   return (

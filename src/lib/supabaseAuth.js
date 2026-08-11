@@ -137,6 +137,29 @@ async function createUserDirectly({ email, password, profile }) {
   });
 
   if (error) {
+    const message = String(error?.message || '').toLowerCase();
+    if (/already registered|user already exists|duplicate key|email.*exists/i.test(message)) {
+      const { data: existingProfile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('email', email.toLowerCase())
+        .maybeSingle();
+
+      if (!profileError && existingProfile) {
+        return {
+          data: {
+            user: {
+              id: existingProfile.id,
+              email: existingProfile.email || email.toLowerCase(),
+            },
+            session: null,
+            profile: existingProfile,
+            duplicateHandled: true,
+          },
+          error: null,
+        };
+      }
+    }
     return { data: null, error: normalizeAuthFailure(error, 'Failed to create user account.') };
   }
 

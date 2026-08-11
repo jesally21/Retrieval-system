@@ -969,23 +969,21 @@ set search_path = public
 as $$
 declare
   metadata jsonb := coalesce(new.raw_user_meta_data, '{}'::jsonb);
-  requested_role text := coalesce(
+  requested_role text := public.normalize_role_text(coalesce(
     nullif(trim(metadata->>'role'), ''),
     nullif(trim(coalesce(new.raw_app_meta_data, '{}'::jsonb)->>'role'), ''),
     'requestor'
-  );
+  ));
   requested_status text := coalesce(nullif(trim(metadata->>'status'), ''), 'Active');
   requested_created_by uuid := null;
 begin
   if requested_role not in (
     'requestor',
     'branch_head',
-    'sacd_head',
     'department_head',
     'dpo',
     'ceo',
     'archivist',
-    'admin',
     'superadmin'
   ) then
     requested_role := 'requestor';
@@ -1050,7 +1048,7 @@ begin
     created_by = excluded.created_by,
     created_by_name = excluded.created_by_name,
     status = excluded.status,
-    role = coalesce(excluded.role, public.profiles.role),
+    role = coalesce(public.normalize_role_text(excluded.role), public.profiles.role),
     is_active = excluded.is_active,
     updated_at = now();
 
@@ -1109,33 +1107,16 @@ begin
       else 'Active'
     end,
     case
-      when coalesce(
+      when public.normalize_role_text(coalesce(
         nullif(trim(u.raw_user_meta_data->>'role'), ''),
         nullif(trim(coalesce(u.raw_app_meta_data, '{}'::jsonb)->>'role'), ''),
         'requestor'
-      ) = 'admin' then 'superadmin'
-      when coalesce(
-        nullif(trim(u.raw_user_meta_data->>'role'), ''),
-        nullif(trim(coalesce(u.raw_app_meta_data, '{}'::jsonb)->>'role'), ''),
-        'requestor'
-      ) = 'sacd_head' then 'department_head'
-      when coalesce(
-        nullif(trim(u.raw_user_meta_data->>'role'), ''),
-        nullif(trim(coalesce(u.raw_app_meta_data, '{}'::jsonb)->>'role'), ''),
-        'requestor'
-      ) in (
-        'requestor',
-        'branch_head',
-        'department_head',
-        'dpo',
-        'ceo',
-        'archivist',
-        'superadmin'
-      ) then coalesce(
-        nullif(trim(u.raw_user_meta_data->>'role'), ''),
-        nullif(trim(coalesce(u.raw_app_meta_data, '{}'::jsonb)->>'role'), ''),
-        'requestor'
-      )
+      )) in ('requestor', 'branch_head', 'department_head', 'dpo', 'ceo', 'archivist', 'superadmin')
+        then public.normalize_role_text(coalesce(
+          nullif(trim(u.raw_user_meta_data->>'role'), ''),
+          nullif(trim(coalesce(u.raw_app_meta_data, '{}'::jsonb)->>'role'), ''),
+          'requestor'
+        ))
       else 'requestor'
     end,
     coalesce(nullif(trim(u.raw_user_meta_data->>'status'), ''), 'Active') = 'Active'
@@ -1150,7 +1131,7 @@ begin
     created_by = excluded.created_by,
     created_by_name = excluded.created_by_name,
     status = excluded.status,
-    role = coalesce(excluded.role, public.profiles.role),
+    role = coalesce(public.normalize_role_text(excluded.role), public.profiles.role),
     is_active = excluded.is_active,
     updated_at = now();
 end;
@@ -1170,6 +1151,27 @@ begin
 end;
 $$;
 
+create or replace function public.normalize_role_text(role text)
+returns text
+language sql
+immutable
+set search_path = public
+as $$
+  select case
+    when lower(trim(coalesce(role, ''))) = 'sacd_head' then 'department_head'
+    when lower(trim(coalesce(role, ''))) = 'admin' then 'superadmin'
+    when lower(trim(coalesce(role, ''))) in ('staff/requestor', 'staff-requestor', 'staff requestor', 'requestor', 'staff', 'staff / requestor') then 'requestor'
+    when lower(trim(coalesce(role, ''))) in ('branch head', 'branch-head', 'branch/head', 'branch head approver', 'manager - approver of requestor', 'manager / approver of requestor') then 'branch_head'
+    when lower(trim(coalesce(role, ''))) in ('department head', 'department-head', 'department/head', 'head - approver of requestors and managers', 'head / approver of requestors and managers') then 'department_head'
+    when lower(trim(coalesce(role, ''))) in ('admin/dpo', 'admin - dpo', 'data privacy officer', 'dpo') then 'dpo'
+    when lower(trim(coalesce(role, ''))) in ('admin/ceo', 'admin - ceo', 'ceo') then 'ceo'
+    when lower(trim(coalesce(role, ''))) in ('archivist', 'archivist - process approved docs') then 'archivist'
+    when lower(trim(coalesce(role, ''))) in ('superadmin', 'super admin', 'superadmin / ict', 'super admin / ict', 'super admin - ict', 'ict') then 'superadmin'
+    when lower(trim(coalesce(role, ''))) in ('requestor', 'branch_head', 'department_head', 'dpo', 'ceo', 'archivist', 'superadmin') then lower(trim(role))
+    else 'requestor'
+  end
+$$;
+
 create or replace function public.get_my_role()
 returns text
 language sql
@@ -1177,7 +1179,9 @@ security definer
 set search_path = public
 stable
 as $$
-  select role from public.profiles where id = auth.uid()
+  select public.normalize_role_text(role)
+  from public.profiles
+  where id = auth.uid()
 $$;
 
 create or replace function public.is_admin()
@@ -1260,7 +1264,7 @@ as $$
         or public.is_archivist()
         or public.is_executive_or_privacy()
         or public.is_superadmin()
-        or (p.role = 'branch_head' and p.branch = dr.branch)
+        or (public.normalize_role_text(p.role) = 'branch_head' and p.branch = dr.branch)
       )
   )
 $$;
